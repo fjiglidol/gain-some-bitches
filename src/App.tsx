@@ -19,13 +19,37 @@ import {
   Dumbbell,
   ArrowRight,
   History,
-  Calendar
+  Calendar,
+  Share2,
+  Download,
+  Brain,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  AlertTriangle,
+  Zap,
+  Moon,
+  Star,
+  Activity,
+  ChevronUp
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { format } from 'date-fns';
 import programmeData from './data/programme.json';
 import { Programme, Session, Exercise, SetEntry, SessionProgress } from './types';
+import {
+  evaluateSession,
+  getRecommendedWeights,
+  computeFatigueScore,
+  loadCoachingState,
+  saveCoachingState,
+  PostSessionFeedback,
+  SessionEvaluation,
+  CoachingState,
+  FatigueLevel,
+  ExerciseFlag
+} from './coachingEngine';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -105,7 +129,7 @@ function isRestDay(session: Session): boolean {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<'select' | 'workout' | 'summary'>('select');
+  const [screen, setScreen] = useState<'select' | 'workout' | 'feedback' | 'coach_review' | 'summary'>('select');
   const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null);
   const [setData, setSetData] = useState<{ [exIdx: number]: SetEntry[] }>({});
   const [skipped, setSkipped] = useState<{ [exIdx: number]: boolean }>({});
@@ -121,8 +145,33 @@ export default function App() {
   const [historyData, setHistoryData] = useState<{ date: string; sessionType: string; exercises: { exercise: string; weight: string; sets: string; reps: string; notes: string }[] }[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  // Coaching state
+  const [coachingState, setCoachingState] = useState<CoachingState>(() => loadCoachingState());
+  const [pendingFeedback, setPendingFeedback] = useState<PostSessionFeedback | null>(null);
+  const [currentEvaluation, setCurrentEvaluation] = useState<SessionEvaluation | null>(null);
+  const [recommendedWeights, setRecommendedWeights] = useState<Record<string, number | null>>({});
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const restTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Seed history: pre-existing sessions that were logged before the app tracked via localStorage
+  const seedHistory = [
+    { date: '2026-03-21 (Sat)', sessionType: 'Push', exercises: [
+      { exercise: 'Bench Press (warm-up ramp)', weight: '60', sets: '1', reps: '', notes: 'Comeback after 2-week break; ramped from 60 to 80' },
+      { exercise: 'Bench Press', weight: '80', sets: '1', reps: 'n/a', notes: 'Felt tough; 2-week break caused strength drop from 90kg PR' },
+      { exercise: 'Bench Press', weight: '70', sets: '1', reps: '6', notes: 'Felt ok/controlled' },
+      { exercise: 'Incline Dumbbell Press', weight: '40', sets: '3', reps: '8-12', notes: 'Dropped weight; slow and controlled reps' },
+      { exercise: 'Seated Shoulder Press (machine)', weight: '12/10/8', sets: '3', reps: '', notes: 'Drop set: 12->10->8 kg' },
+      { exercise: 'Cable Chest Fly', weight: '', sets: '3', reps: '12-15', notes: 'Added for inner chest contraction focus' },
+      { exercise: 'Hanging Leg Raises', weight: '', sets: '3', reps: '8-15', notes: 'Ab finisher' },
+      { exercise: 'Cable Crunch', weight: '', sets: '3', reps: '10-15', notes: 'Ab finisher' },
+      { exercise: 'Plank', weight: '', sets: '2', reps: '30-45s', notes: 'Ab finisher' },
+      { exercise: 'Incline Walk', weight: '', sets: '1', reps: '15 min', notes: 'Post-workout cardio' },
+    ]},
+    { date: '2026-03-23 (Mon)', sessionType: 'Push', exercises: [
+      { exercise: 'Barbell Bench Press', weight: '90', sets: '1', reps: '8', notes: 'Hit pre-break PR. Strong momentum.' },
+    ]},
+  ];
 
   // Load history on mount — try API first, fall back to localStorage
   useEffect(() => {
@@ -132,9 +181,20 @@ export default function App() {
       .catch(() => {
         // Offline / GitHub Pages — load from localStorage
         const stored = localStorage.getItem('gsb_history');
+        let sessions: typeof historyData = [];
         if (stored) {
-          try { setHistoryData(JSON.parse(stored)); } catch {}
+          try { sessions = JSON.parse(stored); } catch {}
         }
+        // Merge seed history (avoid duplicates by date+sessionType)
+        const existingKeys = new Set(sessions.map(s => s.date + '|' + s.sessionType));
+        for (const seed of seedHistory) {
+          if (!existingKeys.has(seed.date + '|' + seed.sessionType)) {
+            sessions.push(seed);
+          }
+        }
+        // Sort by date descending
+        sessions.sort((a, b) => b.date.localeCompare(a.date));
+        setHistoryData(sessions);
       });
   }, [screen]);
 
@@ -225,8 +285,23 @@ export default function App() {
       setSetData(initialSetData);
       setSkipped({});
       setElapsed(0);
+
+      // Compute ghost weights for all weighted exercises
+      const ghosts: Record<string, number | null> = {};
+      const coaching = loadCoachingState();
+      exercises.forEach(ex => {
+        if (ex.type === 'weight') {
+          ghosts[ex.name] = getRecommendedWeights(
+            ex.name,
+            ex,
+            historyData,
+            coaching.acceptedAdjustments
+          );
+        }
+      });
+      setRecommendedWeights(ghosts);
     }
-    
+
     setIsTimerRunning(true);
     setScreen('workout');
   };
@@ -237,11 +312,73 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleFinish = async () => {
+  const handleFinish = () => {
     setIsTimerRunning(false);
-    setScreen('summary');
     localStorage.removeItem('liftoff_session');
+    setScreen('feedback');
+  };
+
+  const handleFeedbackSubmit = async (feedback: PostSessionFeedback | null) => {
+    // Build updated feedback history
+    const updatedFeedbackHistory = feedback
+      ? [...coachingState.feedbackHistory, feedback]
+      : coachingState.feedbackHistory;
+
+    // Run coaching evaluation
+    if (currentSessionKey) {
+      try {
+        const evaluation = evaluateSession(
+          currentSessionKey,
+          setData,
+          skipped,
+          historyData,
+          programme,
+          updatedFeedbackHistory,
+          coachingState.acceptedAdjustments
+        );
+        setCurrentEvaluation(evaluation);
+
+        // Update coaching state
+        const newState: CoachingState = {
+          ...coachingState,
+          feedbackHistory: updatedFeedbackHistory,
+          evaluations: [...coachingState.evaluations, evaluation],
+          athleteState: {
+            ...coachingState.athleteState,
+            fatigue_7day: ['fresh', 'normal', 'accumulating', 'deload_recommended'].indexOf(evaluation.fatigue_level)
+          }
+        };
+        setCoachingState(newState);
+        saveCoachingState(newState);
+      } catch (e) {
+        console.error('Coaching evaluation failed:', e);
+        setCurrentEvaluation(null);
+      }
+    }
+
+    setPendingFeedback(feedback);
+
+    if (feedback) {
+      setScreen('coach_review');
+    } else {
+      // Skipped feedback — go straight to summary
+      await saveToICloud();
+      setScreen('summary');
+    }
+  };
+
+  const handleCoachReviewDone = async (acceptedWeights: Record<string, number>) => {
+    // Merge accepted weights into coaching state
+    const newAccepted = { ...coachingState.acceptedAdjustments, ...acceptedWeights };
+    const newState: CoachingState = {
+      ...coachingState,
+      acceptedAdjustments: newAccepted
+    };
+    setCoachingState(newState);
+    saveCoachingState(newState);
+
     await saveToICloud();
+    setScreen('summary');
   };
 
   const generateCSV = () => {
@@ -320,6 +457,47 @@ export default function App() {
       // Offline — already saved to localStorage
       setSavingStatus('saved');
     }
+  };
+
+  const getCSVFilename = () => {
+    if (!currentSessionKey) return 'GSB_workout.csv';
+    const session = programme.sessions[currentSessionKey];
+    const sessionType = (session.label.split(' — ')[1] || session.label)
+      .replace(/[^a-zA-Z0-9_-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    const dateStr = format(new Date(), 'yyyy-MM-dd');
+    return `GSB_${sessionType}_${dateStr}.csv`;
+  };
+
+  const shareCSV = async () => {
+    const csv = generateCSV();
+    if (!csv || csv.split('\n').length <= 1) return;
+
+    const filename = getCSVFilename();
+    const file = new File([csv], filename, { type: 'text/csv' });
+
+    // Try Web Share API with file sharing (iOS Safari share sheet)
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        return;
+      } catch (err) {
+        // User cancelled or share failed — fall through to download
+        if ((err as DOMException)?.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback: trigger a file download via anchor click
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -470,6 +648,7 @@ export default function App() {
                   exercise={ex}
                   sets={setData[idx] || []}
                   isSkipped={skipped[idx]}
+                  ghostWeight={recommendedWeights[ex.name] ?? null}
                   onUpdateSet={(si, field, val) => {
                     const newData = { ...setData };
                     newData[idx][si] = { ...newData[idx][si], [field]: val };
@@ -527,6 +706,20 @@ export default function App() {
           </motion.div>
         )}
 
+        {screen === 'feedback' && (
+          <FeedbackScreen
+            onSubmit={handleFeedbackSubmit}
+            onSkip={() => handleFeedbackSubmit(null)}
+          />
+        )}
+
+        {screen === 'coach_review' && currentEvaluation && (
+          <CoachReviewScreen
+            evaluation={currentEvaluation}
+            onDone={handleCoachReviewDone}
+          />
+        )}
+
         {screen === 'summary' && currentSessionKey && (
           <motion.div
             key="summary"
@@ -549,7 +742,7 @@ export default function App() {
               </div>
               <div className="glass p-5 rounded-2xl text-center">
                 <span className="block text-2xl font-black text-white">
-                  {Object.values(setData).flat().filter(s => s.weight !== '' || s.reps !== '').length}
+                  {Object.values(setData).flat().filter((s: any) => s.weight !== '' || s.reps !== '').length}
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Sets</span>
               </div>
@@ -588,6 +781,18 @@ export default function App() {
                   </button>
                 )}
               </div>
+              <motion.button
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                onClick={shareCSV}
+                className="w-full flex items-center justify-center gap-3 glass-pink text-pink-300 font-bold py-4 rounded-2xl hover:bg-pink-500/20 transition-all active:scale-[0.97]"
+              >
+                {navigator.share && typeof navigator.canShare === 'function'
+                  ? <><Share2 className="w-5 h-5" />Save to Files</>
+                  : <><Download className="w-5 h-5" />Download CSV</>
+                }
+              </motion.button>
               <button
                 onClick={() => setScreen('select')}
                 className="w-full glass-strong text-white font-bold py-4 rounded-2xl hover:bg-white/20 transition-all"
@@ -661,6 +866,7 @@ function ExerciseCard({
   exercise,
   sets,
   isSkipped,
+  ghostWeight,
   onUpdateSet,
   onToggleSkip,
   onAddSet,
@@ -671,14 +877,20 @@ function ExerciseCard({
   exercise: Exercise;
   sets: SetEntry[];
   isSkipped: boolean;
+  ghostWeight: number | null;
   onUpdateSet: (si: number, field: keyof SetEntry, val: any) => void;
   onToggleSkip: () => void;
   onAddSet: () => void;
   onAddDropSet: () => void;
   onStartRest: (secs: number) => void;
+  [key: string]: any;
 }) {
   const [isOpen, setIsOpen] = useState(idx === 0);
   const isComplete = sets.every(s => s.weight !== '' && s.reps !== '');
+
+  const weightPlaceholder = ghostWeight !== null && ghostWeight > 0
+    ? String(ghostWeight)
+    : 'kg';
 
   return (
     <motion.div
@@ -756,10 +968,15 @@ function ExerciseCard({
                   <input
                     type="number"
                     inputMode="decimal"
-                    placeholder="kg"
+                    placeholder={weightPlaceholder}
                     value={set.weight}
                     onChange={(e) => onUpdateSet(si, 'weight', e.target.value)}
-                    className="w-full glass-input rounded-xl py-2 px-1 text-center text-sm font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                    className={cn(
+                      "w-full glass-input rounded-xl py-2 px-1 text-center text-sm font-bold text-white focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all",
+                      ghostWeight !== null && ghostWeight > 0 && set.weight === ''
+                        ? "placeholder:text-emerald-400/50"
+                        : "placeholder:text-white/20"
+                    )}
                   />
                   <input
                     type="number"
@@ -820,15 +1037,10 @@ function ExerciseCard({
   );
 }
 
-function HistoryCard({ session }: { session: { date: string; sessionType: string; exercises: { exercise: string; weight: string; sets: string; reps: string; notes: string }[] } }) {
-  const [open, setOpen] = useState(false);
-
+function HistoryCard({ session, ...rest }: { session: { date: string; sessionType: string; exercises: { exercise: string; weight: string; sets: string; reps: string; notes: string }[] }; [key: string]: any }) {
   return (
     <div className="glass-pink rounded-2xl overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full p-4 flex items-center justify-between text-left hover:bg-pink-500/10 transition-colors"
-      >
+      <div className="p-4 flex items-center justify-between text-left">
         <div>
           <div className="flex items-center gap-2 mb-0.5">
             <Calendar className="w-3.5 h-3.5 text-pink-400" />
@@ -836,41 +1048,499 @@ function HistoryCard({ session }: { session: { date: string; sessionType: string
           </div>
           <span className="text-xs font-semibold text-pink-400">{session.sessionType}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-white/40">{session.exercises.length} exercises</span>
-          <motion.div animate={{ rotate: open ? 90 : 0 }}>
-            <ChevronRight className="w-4 h-4 text-pink-400/50" />
-          </motion.div>
-        </div>
-      </button>
+        <span className="text-[10px] font-bold text-white/40">{session.exercises.length} exercises</span>
+      </div>
+    </div>
+  );
+}
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="border-t border-pink-500/20"
+// ─── Feedback Screen ──────────────────────────────────────────────────────────
+
+function ScorePicker({
+  label,
+  icon,
+  value,
+  onChange,
+  lowLabel,
+  highLabel,
+  color = 'violet'
+}: {
+  label: string;
+  icon: React.ReactNode;
+  value: number;
+  onChange: (v: number) => void;
+  lowLabel: string;
+  highLabel: string;
+  color?: 'violet' | 'emerald' | 'amber' | 'pink';
+}) {
+  const colorMap = {
+    violet: {
+      active: 'bg-violet-500 text-white border-violet-500',
+      hover: 'hover:bg-violet-500/20 hover:border-violet-500/50'
+    },
+    emerald: {
+      active: 'bg-emerald-500 text-white border-emerald-500',
+      hover: 'hover:bg-emerald-500/20 hover:border-emerald-500/50'
+    },
+    amber: {
+      active: 'bg-amber-500 text-white border-amber-500',
+      hover: 'hover:bg-amber-500/20 hover:border-amber-500/50'
+    },
+    pink: {
+      active: 'bg-pink-500 text-white border-pink-500',
+      hover: 'hover:bg-pink-500/20 hover:border-pink-500/50'
+    }
+  };
+  const c = colorMap[color];
+
+  return (
+    <div className="mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-white/50">{icon}</span>
+        <span className="text-sm font-bold text-white">{label}</span>
+      </div>
+      <div className="flex gap-2">
+        {[1, 2, 3, 4, 5].map(n => (
+          <button
+            key={n}
+            onClick={() => onChange(n)}
+            className={cn(
+              "flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all active:scale-95",
+              value === n
+                ? c.active
+                : `bg-white/5 border-white/10 text-white/40 ${c.hover}`
+            )}
           >
-            <div className="p-4 space-y-2">
-              {session.exercises.map((ex, i) => (
-                <div key={i} className="flex items-start justify-between py-1.5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white/80 truncate">{ex.exercise}</p>
-                    {ex.notes && <p className="text-[10px] text-white/30 truncate">{ex.notes}</p>}
-                  </div>
-                  <div className="text-right ml-3 shrink-0">
-                    <span className="text-sm font-bold text-pink-400">{ex.weight || '—'}</span>
-                    <span className="text-[10px] text-white/40 ml-1">kg</span>
-                    <span className="text-xs text-white/30 mx-1">×</span>
-                    <span className="text-sm font-bold text-white/70">{ex.reps || '—'}</span>
+            {n}
+          </button>
+        ))}
+      </div>
+      <div className="flex justify-between mt-1.5 px-0.5">
+        <span className="text-[10px] text-white/30 font-medium">{lowLabel}</span>
+        <span className="text-[10px] text-white/30 font-medium">{highLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function FeedbackScreen({
+  onSubmit,
+  onSkip
+}: {
+  onSubmit: (f: PostSessionFeedback) => void;
+  onSkip: () => void;
+}) {
+  const [soreness, setSoreness] = useState<number>(3);
+  const [energy, setEnergy] = useState<number>(3);
+  const [sleep, setSleep] = useState<string>('7');
+  const [rating, setRating] = useState<number>(3);
+  const [notes, setNotes] = useState('');
+
+  const handleSubmit = () => {
+    onSubmit({
+      soreness_score: soreness as 1 | 2 | 3 | 4 | 5,
+      energy_score: energy as 1 | 2 | 3 | 4 | 5,
+      sleep_hours: Math.max(0, Math.min(24, parseFloat(sleep) || 7)),
+      session_rating: rating as 1 | 2 | 3 | 4 | 5,
+      notes: notes.trim() || undefined
+    });
+  };
+
+  return (
+    <motion.div
+      key="feedback"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      className="max-w-2xl mx-auto px-5 py-10"
+    >
+      <header className="mb-8">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400 mb-1">Post-Session</p>
+        <h1 className="text-3xl font-extrabold text-white">How was that?</h1>
+      </header>
+
+      <div className="glass rounded-3xl p-6 mb-4">
+        <ScorePicker
+          label="Body Soreness going in"
+          icon={<Activity className="w-4 h-4" />}
+          value={soreness}
+          onChange={setSoreness}
+          lowLabel="None"
+          highLabel="Very Sore"
+          color="amber"
+        />
+        <ScorePicker
+          label="Energy Level"
+          icon={<Zap className="w-4 h-4" />}
+          value={energy}
+          onChange={setEnergy}
+          lowLabel="Drained"
+          highLabel="Energised"
+          color="emerald"
+        />
+        <ScorePicker
+          label="Session Rating"
+          icon={<Star className="w-4 h-4" />}
+          value={rating}
+          onChange={setRating}
+          lowLabel="Terrible"
+          highLabel="Amazing"
+          color="violet"
+        />
+
+        <div className="mb-2">
+          <div className="flex items-center gap-2 mb-2">
+            <Moon className="w-4 h-4 text-white/50" />
+            <span className="text-sm font-bold text-white">Sleep Last Night</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={sleep}
+              onChange={e => setSleep(e.target.value)}
+              min={0}
+              max={24}
+              step={0.5}
+              className="w-24 glass-input rounded-xl py-2.5 px-3 text-center text-sm font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+            />
+            <span className="text-sm text-white/40 font-medium">hours</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass rounded-3xl p-4 mb-6">
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="Any notes? (optional — pain, PRs, conditions...)"
+          rows={2}
+          className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/25 focus:outline-none resize-none"
+        />
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={onSkip}
+          className="flex-1 glass text-white/50 font-bold py-4 rounded-2xl hover:bg-white/10 transition-all active:scale-[0.98]"
+        >
+          Skip
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="flex-[2] bg-violet-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-violet-600/25 hover:bg-violet-500 transition-all active:scale-[0.98]"
+        >
+          Get Coach Review
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Coach Review Screen ──────────────────────────────────────────────────────
+
+function fatigueBadge(level: FatigueLevel): { label: string; className: string } {
+  switch (level) {
+    case 'fresh': return { label: 'Fresh', className: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+    case 'normal': return { label: 'Normal', className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+    case 'accumulating': return { label: 'Accumulating Fatigue', className: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+    case 'deload_recommended': return { label: 'Deload Recommended', className: 'bg-red-500/20 text-red-400 border-red-500/30' };
+  }
+}
+
+function flagBadge(flag: ExerciseFlag): { label: string; className: string } {
+  switch (flag) {
+    case 'strong_session': return { label: 'Strong Session', className: 'bg-emerald-500/15 text-emerald-400' };
+    case 'rpe_spike': return { label: 'RPE Spike', className: 'bg-amber-500/15 text-amber-400' };
+    case 'form_breakdown': return { label: 'Form Breakdown', className: 'bg-red-500/15 text-red-400' };
+    case 'pain': return { label: 'Pain Flagged', className: 'bg-red-500/20 text-red-400' };
+    case 'incomplete': return { label: 'Incomplete', className: 'bg-white/10 text-white/50' };
+    case 'weight_increase_due': return { label: 'Ready to Progress', className: 'bg-violet-500/15 text-violet-400' };
+  }
+}
+
+function adjustmentIcon(type: string) {
+  switch (type) {
+    case 'weight_increase': return <TrendingUp className="w-4 h-4 text-emerald-400" />;
+    case 'weight_reduction': return <TrendingDown className="w-4 h-4 text-red-400" />;
+    case 'deload': return <Minus className="w-4 h-4 text-amber-400" />;
+    case 'volume_reduction': return <AlertTriangle className="w-4 h-4 text-amber-400" />;
+    default: return <Activity className="w-4 h-4 text-white/50" />;
+  }
+}
+
+function CoachReviewScreen({
+  evaluation,
+  onDone
+}: {
+  evaluation: SessionEvaluation;
+  onDone: (acceptedWeights: Record<string, number>) => void;
+}) {
+  const [accepted, setAccepted] = useState<Record<string, boolean>>({});
+  const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
+
+  const toggleAccept = (exerciseName: string) => {
+    setAccepted(prev => ({ ...prev, [exerciseName]: !prev[exerciseName] }));
+  };
+
+  const toggleExercise = (i: number) => {
+    setExpandedExercises(prev => ({ ...prev, [i]: !prev[i] }));
+  };
+
+  const handleContinue = () => {
+    const acceptedWeights: Record<string, number> = {};
+    for (const adj of evaluation.adjustments) {
+      if (accepted[adj.exercise_name]) {
+        acceptedWeights[adj.exercise_name] = adj.recommended_value;
+      }
+    }
+    onDone(acceptedWeights);
+  };
+
+  const fb = fatigueBadge(evaluation.fatigue_level);
+  const completedCount = evaluation.exercise_evaluations.filter(e => e.completion_rate >= 0.8).length;
+  const totalCount = evaluation.exercise_evaluations.length;
+
+  return (
+    <motion.div
+      key="coach_review"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      className="max-w-2xl mx-auto px-5 py-10 pb-32"
+    >
+      {/* Header */}
+      <header className="mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <Brain className="w-6 h-6 text-violet-400" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400">Coach Review</p>
+        </div>
+        <h1 className="text-3xl font-extrabold text-white">Session Analysis</h1>
+      </header>
+
+      {/* Section 1: Overview */}
+      <div className="glass rounded-3xl p-5 mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-3">Overview</p>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <span className="text-2xl font-black text-white">{Math.round(evaluation.completion_rate * 100)}%</span>
+            <span className="text-white/40 text-sm ml-2">{completedCount}/{totalCount} exercises</span>
+          </div>
+          <span className={cn(
+            "text-xs font-bold px-3 py-1.5 rounded-full border",
+            fb.className
+          )}>
+            {fb.label}
+          </span>
+        </div>
+        {/* Completion bar */}
+        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${evaluation.completion_rate * 100}%` }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+            className="h-full bg-emerald-500 rounded-full"
+          />
+        </div>
+      </div>
+
+      {/* Section 2: Exercise Breakdown */}
+      {evaluation.exercise_evaluations.length > 0 && (
+        <div className="mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Exercise Breakdown</p>
+          <div className="space-y-2">
+            {evaluation.exercise_evaluations.map((ex, i) => {
+              const isExpanded = expandedExercises[i];
+              const adjForEx = evaluation.adjustments.find(a => a.exercise_name === ex.exercise_name);
+              return (
+                <div key={i} className="glass rounded-2xl overflow-hidden">
+                  <button
+                    onClick={() => toggleExercise(i)}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="text-sm font-bold text-white truncate">{ex.exercise_name}</p>
+                      <p className="text-xs text-white/40 mt-0.5">
+                        {ex.avg_weight > 0 ? `${ex.avg_weight.toFixed(1)}kg` : '—'}
+                        {ex.avg_reps > 0 ? ` × ${Math.round(ex.avg_reps)} reps` : ''}
+                        {' · '}{Math.round(ex.completion_rate * 100)}% complete
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {ex.flags.length > 0 && (
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                          flagBadge(ex.flags[0]).className
+                        )}>
+                          {flagBadge(ex.flags[0]).label}
+                        </span>
+                      )}
+                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
+                        <ChevronDown className="w-4 h-4 text-white/30" />
+                      </motion.div>
+                    </div>
+                  </button>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-4 border-t border-white/5 pt-3 space-y-2">
+                          <div className="flex gap-4 text-xs">
+                            <div>
+                              <span className="text-white/30 uppercase tracking-wider text-[10px]">Prescribed</span>
+                              <p className="text-white/70 font-semibold mt-0.5">
+                                {ex.prescribed_reps_min}–{ex.prescribed_reps_max} reps @ RPE {ex.prescribed_rpe_min}–{ex.prescribed_rpe_max}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-white/30 uppercase tracking-wider text-[10px]">Achieved</span>
+                              <p className="text-white/70 font-semibold mt-0.5">
+                                {ex.avg_reps > 0 ? `~${Math.round(ex.avg_reps)} reps` : '—'}
+                                {ex.avg_weight > 0 ? ` @ ${ex.avg_weight.toFixed(1)}kg` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          {ex.flags.length > 1 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {ex.flags.slice(1).map(f => (
+                                <span key={f} className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", flagBadge(f).className)}>
+                                  {flagBadge(f).label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {adjForEx && adjForEx.type !== 'informational' && (
+                            <div className="mt-2 p-2.5 bg-white/5 rounded-xl">
+                              <div className="flex items-center gap-2">
+                                {adjustmentIcon(adjForEx.type)}
+                                <span className="text-xs font-semibold text-white/80">
+                                  {adjForEx.type === 'weight_increase'
+                                    ? `Increase to ${adjForEx.recommended_value}kg`
+                                    : adjForEx.type === 'weight_reduction' || adjForEx.type === 'deload'
+                                    ? `Reduce to ${adjForEx.recommended_value}kg`
+                                    : adjForEx.reason}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Section 3: Recommendations */}
+      {evaluation.adjustments.filter(a => a.type !== 'informational').length > 0 && (
+        <div className="mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Recommendations</p>
+          <div className="space-y-2">
+            {evaluation.adjustments
+              .filter(a => a.type !== 'informational')
+              .map((adj, i) => (
+                <div key={i} className="glass rounded-2xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 shrink-0">{adjustmentIcon(adj.type)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white">
+                        {adj.type === 'weight_increase'
+                          ? `${adj.exercise_name} → ${adj.recommended_value}kg`
+                          : adj.type === 'weight_reduction' || adj.type === 'deload'
+                          ? `${adj.exercise_name} → ${adj.recommended_value}kg`
+                          : adj.exercise_name}
+                      </p>
+                      <p className="text-xs text-white/50 mt-0.5">{adj.reason}</p>
+                      {adj.evidence.length > 0 && (
+                        <p className="text-[11px] text-white/30 mt-1">{adj.evidence[0]}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => toggleAccept(adj.exercise_name)}
+                      className={cn(
+                        "shrink-0 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all",
+                        accepted[adj.exercise_name]
+                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                          : "bg-white/5 border-white/10 text-white/40 hover:text-white/60 hover:bg-white/10"
+                      )}
+                    >
+                      {accepted[adj.exercise_name] ? 'Accepted' : 'Accept'}
+                    </button>
                   </div>
                 </div>
               ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section 4: Projections */}
+      {evaluation.projections.length > 0 && (
+        <div className="mb-8">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Week 8 Targets</p>
+          <div className="space-y-2">
+            {evaluation.projections.map((proj, i) => {
+              const pct = Math.min(1, proj.current_weight / proj.target_weight);
+              const statusColors: Record<string, string> = {
+                on_track: 'text-emerald-400',
+                ahead: 'text-violet-400',
+                behind: 'text-amber-400'
+              };
+              const statusLabels: Record<string, string> = {
+                on_track: 'On Track',
+                ahead: 'Ahead',
+                behind: 'Behind'
+              };
+              return (
+                <div key={i} className="glass rounded-2xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-bold text-white truncate mr-3">{proj.exercise_name}</p>
+                    <span className={cn("text-[10px] font-black uppercase tracking-widest shrink-0", statusColors[proj.status])}>
+                      {statusLabels[proj.status]}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mb-2.5">
+                    <span className="text-lg font-black text-white">{proj.current_weight}kg</span>
+                    <div className="flex-1 flex items-center gap-1">
+                      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct * 100}%` }}
+                          transition={{ duration: 0.8, ease: 'easeOut' }}
+                          className={cn("h-full rounded-full", proj.status === 'behind' ? 'bg-amber-500' : proj.status === 'ahead' ? 'bg-violet-500' : 'bg-emerald-500')}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-lg font-black text-white/40">{proj.target_weight}kg</span>
+                  </div>
+                  <p className="text-[11px] text-white/30">
+                    {proj.weeks_remaining}w remaining · Need +{proj.required_per_week.toFixed(1)}kg/wk · Actual +{proj.actual_per_week.toFixed(1)}kg/wk
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Continue button */}
+      <div className="fixed bottom-0 left-0 right-0 p-5 bottom-fade pointer-events-none">
+        <div className="max-w-2xl mx-auto pointer-events-auto">
+          <button
+            onClick={handleContinue}
+            className="w-full bg-emerald-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/25 hover:bg-emerald-400 transition-all active:scale-[0.98]"
+          >
+            Continue to Summary
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
