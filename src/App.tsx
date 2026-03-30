@@ -32,6 +32,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { format, differenceInDays, parseISO } from 'date-fns';
 import programmeData from './data/programme.json';
+import { seedHistory, mergeHistory, type HistorySession } from './data/seedHistory';
 import { Programme, Session, Exercise, SetEntry, SessionProgress } from './types';
 import {
   evaluateSession,
@@ -136,7 +137,7 @@ export default function App() {
   });
 
   const [exerciseRpe, setExerciseRpe] = useState<{ [exIdx: number]: number }>({});
-  const [historyData, setHistoryData] = useState<{ date: string; sessionType: string; exercises: { exercise: string; weight: string; sets: string; reps: string; notes: string }[] }[]>([]);
+  const [historyData, setHistoryData] = useState<HistorySession[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // Coaching state
@@ -148,47 +149,25 @@ export default function App() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const restTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Seed history: pre-existing sessions that were logged before the app tracked via localStorage
-  const seedHistory = [
-    { date: '2026-03-21 (Sat)', sessionType: 'Push', exercises: [
-      { exercise: 'Bench Press (warm-up ramp)', weight: '60', sets: '1', reps: '', notes: 'Comeback after 2-week break; ramped from 60 to 80' },
-      { exercise: 'Bench Press', weight: '80', sets: '1', reps: 'n/a', notes: 'Felt tough; 2-week break caused strength drop from 90kg PR' },
-      { exercise: 'Bench Press', weight: '70', sets: '1', reps: '6', notes: 'Felt ok/controlled' },
-      { exercise: 'Incline Dumbbell Press', weight: '40', sets: '3', reps: '8-12', notes: 'Dropped weight; slow and controlled reps' },
-      { exercise: 'Seated Shoulder Press (machine)', weight: '12/10/8', sets: '3', reps: '', notes: 'Drop set: 12->10->8 kg' },
-      { exercise: 'Cable Chest Fly', weight: '', sets: '3', reps: '12-15', notes: 'Added for inner chest contraction focus' },
-      { exercise: 'Hanging Leg Raises', weight: '', sets: '3', reps: '8-15', notes: 'Ab finisher' },
-      { exercise: 'Cable Crunch', weight: '', sets: '3', reps: '10-15', notes: 'Ab finisher' },
-      { exercise: 'Plank', weight: '', sets: '2', reps: '30-45s', notes: 'Ab finisher' },
-      { exercise: 'Incline Walk', weight: '', sets: '1', reps: '15 min', notes: 'Post-workout cardio' },
-    ]},
-    { date: '2026-03-23 (Mon)', sessionType: 'Push', exercises: [
-      { exercise: 'Barbell Bench Press', weight: '90', sets: '1', reps: '8', notes: 'Hit pre-break PR. Strong momentum.' },
-    ]},
-  ];
+  // Manual log form state
+  const [logFormOpen, setLogFormOpen] = useState(false);
+  const [logFormDate, setLogFormDate] = useState('');
+  const [logFormSessionType, setLogFormSessionType] = useState('Push A (Heavy)');
+  const [logFormText, setLogFormText] = useState('');
+  const [logFormError, setLogFormError] = useState('');
 
-  // Load history on mount — try API first, fall back to localStorage
+  // Load history on mount — try API first, fall back to localStorage + seed
   useEffect(() => {
     fetch('/api/history')
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(d => setHistoryData(d.sessions || []))
       .catch(() => {
-        // Offline / GitHub Pages — load from localStorage
         const stored = localStorage.getItem('gsb_history');
-        let sessions: typeof historyData = [];
+        let local: HistorySession[] = [];
         if (stored) {
-          try { sessions = JSON.parse(stored); } catch {}
+          try { local = JSON.parse(stored); } catch {}
         }
-        // Merge seed history (avoid duplicates by date+sessionType)
-        const existingKeys = new Set(sessions.map(s => s.date + '|' + s.sessionType));
-        for (const seed of seedHistory) {
-          if (!existingKeys.has(seed.date + '|' + seed.sessionType)) {
-            sessions.push(seed);
-          }
-        }
-        // Sort by date descending
-        sessions.sort((a, b) => b.date.localeCompare(a.date));
-        setHistoryData(sessions);
+        setHistoryData(mergeHistory(local));
       });
   }, [screen]);
 
@@ -404,11 +383,9 @@ export default function App() {
   const [iCloudStatus, setICloudStatus] = useState<'idle' | 'saving' | 'saved' | 'share'>('idle');
 
   const saveToICloud = async () => {
-    const csv = generateCSV();
-    if (!csv || csv.split('\n').length <= 1) return;
     if (!currentSessionKey) return;
 
-    // Always save to localStorage (works offline / GitHub Pages)
+    // Always save to localStorage regardless of whether sets have data
     const session = programme.sessions[currentSessionKey];
     const sessionType = session.label.split(' — ')[1] || session.label;
     const dateStr = format(new Date(), 'yyyy-MM-dd (EEE)');
@@ -429,11 +406,23 @@ export default function App() {
       })
       .filter(Boolean) as { exercise: string; weight: string; sets: string; reps: string; notes: string }[];
 
-    const newSession = { date: dateStr, sessionType, exercises: loggedExercises };
+    const newSession: HistorySession = { date: dateStr, sessionType, exercises: loggedExercises };
     const stored = localStorage.getItem('gsb_history');
-    const existing = stored ? JSON.parse(stored) : [];
-    existing.unshift(newSession);
-    localStorage.setItem('gsb_history', JSON.stringify(existing));
+    let local: HistorySession[] = [];
+    try { local = stored ? JSON.parse(stored) : []; } catch {}
+    // Prepend new session, persist only the user-logged sessions (not seed)
+    local.unshift(newSession);
+    localStorage.setItem('gsb_history', JSON.stringify(local));
+
+    // Merge with seed for in-memory display
+    setHistoryData(mergeHistory(local));
+
+    // Attempt CSV save to API (only if there's actual set data)
+    const csv = generateCSV();
+    if (!csv || csv.split('\n').length <= 1) {
+      setSavingStatus('saved');
+      return;
+    }
 
     setSavingStatus('saving');
     try {
@@ -534,6 +523,84 @@ export default function App() {
 
     // Final fallback: show share prompt state
     setICloudStatus('share');
+  };
+
+  /**
+   * Parses and saves a manually entered past workout.
+   * Format: one exercise per line — "Exercise Name: weight x reps, weight x reps"
+   * or just "Exercise Name: notes"
+   */
+  const handleLogPastWorkout = () => {
+    setLogFormError('');
+    if (!logFormDate) { setLogFormError('Pick a date.'); return; }
+    if (!logFormText.trim()) { setLogFormError('Enter at least one exercise.'); return; }
+
+    // Format date as "yyyy-MM-dd (EEE)"
+    const parsed = new Date(logFormDate + 'T12:00:00');
+    const dateStr = format(parsed, 'yyyy-MM-dd (EEE)');
+
+    const exercises: HistorySession['exercises'] = [];
+    for (const raw of logFormText.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      const colonIdx = line.indexOf(':');
+      if (colonIdx === -1) {
+        // No colon — treat entire line as exercise name with no data
+        exercises.push({ exercise: line, weight: '', sets: '', reps: '', notes: '' });
+        continue;
+      }
+      const name = line.slice(0, colonIdx).trim();
+      const rest = line.slice(colonIdx + 1).trim();
+      // Each comma-separated chunk is a set: "80 x 8" or "80x8" or just "80"
+      const setChunks = rest.split(',').map(s => s.trim()).filter(Boolean);
+      const weights: string[] = [];
+      const reps: string[] = [];
+      let notes = '';
+      for (const chunk of setChunks) {
+        // Match "80 x 8", "80x8", "80kg x 8", "bw x 10" etc.
+        const m = chunk.match(/^([^\s]+?)\s*[xX]\s*(\S+)/);
+        if (m) {
+          weights.push(m[1].replace(/kg$/i, ''));
+          reps.push(m[2]);
+        } else if (/^\d/.test(chunk) || /^bw/i.test(chunk)) {
+          // Just a weight with no reps
+          weights.push(chunk.replace(/kg$/i, ''));
+        } else {
+          // Treat as a note
+          notes = notes ? `${notes}; ${chunk}` : chunk;
+        }
+      }
+      exercises.push({
+        exercise: name,
+        weight: weights.join('/'),
+        sets: weights.length > 0 ? String(weights.length) : '',
+        reps: reps.join('/'),
+        notes,
+      });
+    }
+
+    if (exercises.length === 0) { setLogFormError('Could not parse any exercises.'); return; }
+
+    const newSession: HistorySession = { date: dateStr, sessionType: logFormSessionType, exercises };
+    const stored = localStorage.getItem('gsb_history');
+    let local: HistorySession[] = [];
+    try { local = stored ? JSON.parse(stored) : []; } catch {}
+    // Check for duplicate
+    const key = `${dateStr}|${logFormSessionType}`;
+    if (local.some(s => `${s.date}|${s.sessionType}` === key)) {
+      setLogFormError('A session with this date and type already exists.');
+      return;
+    }
+    local.unshift(newSession);
+    localStorage.setItem('gsb_history', JSON.stringify(local));
+    setHistoryData(mergeHistory(local));
+
+    // Reset form
+    setLogFormOpen(false);
+    setLogFormDate('');
+    setLogFormText('');
+    setHistoryOpen(true);
+    if ('vibrate' in navigator) navigator.vibrate(50);
   };
 
   return (
@@ -690,6 +757,90 @@ export default function App() {
                   {historyData.length} Sessions
                 </span>
               </button>
+
+              {/* Log past workout button */}
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={() => { setLogFormOpen(o => !o); setLogFormError(''); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 text-[11px] font-bold uppercase tracking-widest transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Log Past Workout
+                </button>
+              </div>
+
+              {/* Manual log form */}
+              <AnimatePresence>
+                {logFormOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-3 glass-pink rounded-2xl p-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-pink-400">Log Past Workout</p>
+
+                      {/* Date */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={logFormDate}
+                          onChange={e => setLogFormDate(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50"
+                        />
+                      </div>
+
+                      {/* Session type */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">Session Type</label>
+                        <select
+                          value={logFormSessionType}
+                          onChange={e => setLogFormSessionType(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50 appearance-none"
+                        >
+                          {['Push A (Heavy)', 'Push B (Pump)', 'Pull A (Heavy)', 'Pull B (Pump)', 'Legs + Core', 'Cardio', 'Push', 'Pull', 'Other'].map(t => (
+                            <option key={t} value={t} className="bg-zinc-900">{t}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Exercises */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">Exercises</label>
+                        <p className="text-[10px] text-white/30 mb-1.5">One per line — <span className="font-mono">Exercise: 80 x 8, 85 x 6</span></p>
+                        <textarea
+                          value={logFormText}
+                          onChange={e => setLogFormText(e.target.value)}
+                          placeholder={"Bench Press: 70 x 10, 80 x 8, 90 x 6\nOHP: 40 x 10, 40 x 8\nLateral Raise: 8 x 10, 8 x 10"}
+                          rows={5}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-pink-500/50 font-mono resize-none"
+                        />
+                      </div>
+
+                      {logFormError && (
+                        <p className="text-[11px] text-red-400 font-semibold">{logFormError}</p>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={() => { setLogFormOpen(false); setLogFormError(''); }}
+                          className="flex-1 py-2.5 rounded-xl bg-white/5 text-white/50 text-sm font-semibold hover:bg-white/10 transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleLogPastWorkout}
+                          className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-bold transition-all"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <AnimatePresence>
                 {historyOpen && (
