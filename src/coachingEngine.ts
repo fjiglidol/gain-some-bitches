@@ -117,6 +117,27 @@ export interface HistorySession {
   }[];
 }
 
+// ─── Exercise Name Normalisation ─────────────────────────────────────────────
+
+const NAME_NORMALISATION_MAP: Record<string, string> = {
+  'bench press': 'Barbell Bench Press',
+  'bench press (warm-up ramp)': 'Barbell Bench Press',
+  'barbell bench press': 'Barbell Bench Press',
+  'incline dumbbell press': 'Incline Dumbbell Bench Press',
+  'incline dumbbell bench press': 'Incline Dumbbell Bench Press',
+  'seated shoulder press (machine)': 'Seated Shoulder Press',
+  'seated shoulder press': 'Seated Shoulder Press',
+};
+
+/**
+ * Returns the canonical exercise name for history lookups.
+ * Falls back to the original if no mapping exists.
+ */
+export function normaliseExerciseName(name: string): string {
+  const key = name.toLowerCase().trim();
+  return NAME_NORMALISATION_MAP[key] ?? name;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PROGRAMME_START = new Date('2026-03-25');
@@ -204,10 +225,11 @@ function getExerciseHistory(
   limit?: number
 ): { date: string; weight: number; reps: number; sets: number }[] {
   const result: { date: string; weight: number; reps: number; sets: number }[] = [];
+  const canonicalName = normaliseExerciseName(exerciseName).toLowerCase();
 
   for (const session of history) {
     const match = session.exercises.find(
-      e => e.exercise.toLowerCase() === exerciseName.toLowerCase()
+      e => normaliseExerciseName(e.exercise).toLowerCase() === canonicalName
     );
     if (!match) continue;
 
@@ -635,6 +657,101 @@ export function evaluateSession(
     projections,
     next_session_weights: nextSessionWeights
   };
+}
+
+// ─── PR Detection ─────────────────────────────────────────────────────────────
+
+export interface PRRecord {
+  weight: number;
+  reps: number;
+  date: string;
+}
+
+/**
+ * Computes all-time PR (max top-set weight) for every exercise in history.
+ * Returns a map of canonical exercise name → PR record.
+ */
+export function computePRs(history: HistorySession[]): Record<string, PRRecord> {
+  const prs: Record<string, PRRecord> = {};
+
+  for (const session of history) {
+    for (const ex of session.exercises) {
+      const canonical = normaliseExerciseName(ex.exercise);
+      const weights = ex.weight.split('/').map(parseWeight).filter(w => w > 0);
+      const repsArr = ex.reps.split('/').map(parseReps).filter(r => r > 0);
+      if (weights.length === 0) continue;
+
+      const topWeight = Math.max(...weights);
+      const topIdx = weights.lastIndexOf(topWeight);
+      const topReps = repsArr[topIdx] ?? (repsArr.length > 0 ? Math.max(...repsArr) : 0);
+
+      const existing = prs[canonical];
+      if (!existing || topWeight > existing.weight) {
+        prs[canonical] = { weight: topWeight, reps: topReps, date: session.date };
+      }
+    }
+  }
+
+  return prs;
+}
+
+// ─── Milestone Proximity Alert ────────────────────────────────────────────────
+
+export interface MilestoneAlert {
+  exercise: string;
+  milestone: number;
+  sessionsAway: number;
+  currentWeight: number;
+}
+
+const MILESTONE_MAP: Record<string, number[]> = {
+  'Barbell Bench Press': [92.5, 95, 97.5, 100],
+  'Barbell Back Squat': [92.5, 95, 97.5, 100],
+  'Romanian Deadlift': [100, 110, 120, 130],
+};
+
+/**
+ * Computes the next milestone alert for key compounds.
+ * Returns the most imminent milestone across all key lifts, or null if none.
+ */
+export function computeMilestoneAlert(
+  history: HistorySession[]
+): MilestoneAlert | null {
+  let best: MilestoneAlert | null = null;
+
+  for (const [exName, milestones] of Object.entries(MILESTONE_MAP)) {
+    const exHistory = getExerciseHistory(exName, history);
+    if (exHistory.length < 3) continue;
+
+    const currentWeight = exHistory[exHistory.length - 1].weight;
+    if (currentWeight <= 0) continue;
+
+    // Stall check — don't fire if stalled
+    if (detectStall(exHistory)) continue;
+
+    // Average increment per session (only sessions with weight increases)
+    let totalInc = 0;
+    let incCount = 0;
+    for (let i = 1; i < exHistory.length; i++) {
+      const delta = exHistory[i].weight - exHistory[i - 1].weight;
+      if (delta > 0) { totalInc += delta; incCount++; }
+    }
+    const avgIncPerSession = incCount > 0 ? totalInc / incCount : 2.5;
+
+    // Find the next milestone within 10kg
+    const nextMilestone = milestones.find(m => m > currentWeight && m - currentWeight <= 10);
+    if (!nextMilestone) continue;
+
+    const gap = nextMilestone - currentWeight;
+    const sessionsAway = Math.ceil(gap / avgIncPerSession);
+
+    // Keep the closest one
+    if (!best || sessionsAway < best.sessionsAway) {
+      best = { exercise: exName, milestone: nextMilestone, sessionsAway, currentWeight };
+    }
+  }
+
+  return best;
 }
 
 /**

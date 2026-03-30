@@ -9,6 +9,26 @@
     @apply text-white antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     background: #0a0a0a;
+    /* Prevent double-tap zoom on iOS/Android while keeping scroll */
+    touch-action: pan-x pan-y;
+    -webkit-tap-highlight-color: transparent;
+    /* Prevent text selection flash on rapid taps */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Allow text selection inside inputs and textareas */
+  input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+    /* Removes 300ms tap delay and disables double-tap zoom */
+    touch-action: manipulation;
+  }
+
+  button, [role="button"], select, label {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
   }
 }
 

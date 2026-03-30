@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { format, differenceInDays, parseISO } from 'date-fns';
+import { format, differenceInDays, parseISO, startOfWeek, endOfWeek, isWithinInterval, addDays } from 'date-fns';
 import programmeData from './data/programme.json';
 import { seedHistory, mergeHistory, type HistorySession } from './data/seedHistory';
 import { Programme, Session, Exercise, SetEntry, SessionProgress } from './types';
@@ -41,9 +41,14 @@ import {
   computeFatigueScore,
   loadCoachingState,
   saveCoachingState,
+  computePRs,
+  computeMilestoneAlert,
+  normaliseExerciseName,
   PostSessionFeedback,
   SessionEvaluation,
   CoachingState,
+  PRRecord,
+  MilestoneAlert,
 } from './coachingEngine';
 import {
   exerciseRegistry,
@@ -156,6 +161,24 @@ export default function App() {
   const [synergistSuggestion, setSynergistSuggestion] = useState<SynergistSuggestion | null>(null);
   const [suggestionHidden, setSuggestionHidden] = useState(false);
 
+  // PR detection state
+  const [prMap, setPrMap] = useState<Record<string, PRRecord>>({});
+  const [newPRBanner, setNewPRBanner] = useState<{ exercise: string; weight: number; oldPR: number } | null>(null);
+
+  // Last-session data per exercise (keyed by exercise index)
+  const [lastSessionByEx, setLastSessionByEx] = useState<Record<number, { weight: number; reps: number } | null>>({});
+
+  // Sparkline data per exercise (keyed by exercise index)
+  const [sparklinesByEx, setSparklinesByEx] = useState<Record<number, number[]>>({});
+
+  // Milestone alert
+  const [milestoneAlert, setMilestoneAlert] = useState<MilestoneAlert | null>(null);
+  const [milestoneAlertDismissed, setMilestoneAlertDismissed] = useState(false);
+
+  // Rest timer coaching cue
+  const [showCoachingCue, setShowCoachingCue] = useState(false);
+  const [coachingCueText, setCoachingCueText] = useState('');
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const restTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -220,16 +243,21 @@ export default function App() {
       }, 1000);
     } else if (restTimer.remaining <= 0 && restTimer.active) {
       if (restTimerRef.current) clearInterval(restTimerRef.current);
-      setRestTimer(prev => ({ ...prev, active: false }));
       // Vibrate if supported
       if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+      // Show coaching cue for 3s then dismiss
+      setShowCoachingCue(true);
+      setTimeout(() => {
+        setShowCoachingCue(false);
+        setRestTimer(prev => ({ ...prev, active: false }));
+      }, 3000);
     }
     return () => {
       if (restTimerRef.current) clearInterval(restTimerRef.current);
     };
   }, [restTimer.active, restTimer.remaining]);
 
-  // Generate synergist suggestion whenever rest timer starts
+  // Generate synergist suggestion + coaching cue whenever rest timer starts
   useEffect(() => {
     if (restTimer.active && currentSessionKey) {
       const suggestion = getSynergistSuggestion(
@@ -239,6 +267,29 @@ export default function App() {
       );
       setSynergistSuggestion(suggestion);
       setSuggestionHidden(false);
+      setShowCoachingCue(false);
+
+      // Pre-compute coaching cue for when timer hits 0
+      const exName = restTimer.exName;
+      const lastData = Object.values(lastSessionByEx).find((_, i) => {
+        // find by matching exName to current exercises
+        if (!currentSessionKey) return false;
+        const exercises = getSessionExercises(programme.sessions[currentSessionKey]);
+        return exercises[i]?.name === exName || normaliseExerciseName(exercises[i]?.name ?? '') === normaliseExerciseName(exName);
+      });
+      // Look up from lastSessionByEx by exercise name
+      if (currentSessionKey) {
+        const exercises = getSessionExercises(programme.sessions[currentSessionKey]);
+        const exIdx = exercises.findIndex(e =>
+          normaliseExerciseName(e.name) === normaliseExerciseName(exName)
+        );
+        const last = exIdx >= 0 ? lastSessionByEx[exIdx] : null;
+        if (last && last.weight > 0) {
+          setCoachingCueText(`Last time: ${last.weight}kg × ${last.reps}. Go.`);
+        } else {
+          setCoachingCueText('Focus on form. Controlled reps.');
+        }
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restTimer.active]);
@@ -302,6 +353,46 @@ export default function App() {
         }
       });
       setRecommendedWeights(ghosts);
+
+      // Compute PRs
+      const prs = computePRs(historyData);
+      setPrMap(prs);
+
+      // Compute last-session data per exercise (for beat-last-session + sparklines)
+      const lastByEx: Record<number, { weight: number; reps: number } | null> = {};
+      const sparklines: Record<number, number[]> = {};
+      exercises.forEach((ex, idx) => {
+        if (ex.type !== 'weight') { lastByEx[idx] = null; return; }
+        const canonical = normaliseExerciseName(ex.name);
+        // Find all history entries for this exercise, sorted oldest→newest
+        const entries: { weight: number; reps: number; date: string }[] = [];
+        for (const sess of [...historyData].reverse()) {
+          for (const he of sess.exercises) {
+            if (normaliseExerciseName(he.exercise) !== canonical) continue;
+            const weights = he.weight.split('/').map(w => parseFloat(w)).filter(w => !isNaN(w) && w > 0);
+            const repsArr = he.reps.split('/').map(r => parseInt(r)).filter(r => !isNaN(r) && r > 0);
+            if (weights.length === 0) continue;
+            const topWeight = Math.max(...weights);
+            const topIdx = weights.lastIndexOf(topWeight);
+            const topReps = repsArr[topIdx] ?? (repsArr.length > 0 ? Math.max(...repsArr) : 0);
+            entries.push({ weight: topWeight, reps: topReps, date: sess.date });
+          }
+        }
+        // Most recent entry = last session
+        const last = entries.length > 0 ? entries[entries.length - 1] : null;
+        lastByEx[idx] = last ? { weight: last.weight, reps: last.reps } : null;
+
+        // Sparkline: last 6 top-set weights
+        const allWeights = entries.map(e => e.weight);
+        sparklines[idx] = allWeights.slice(-6);
+      });
+      setLastSessionByEx(lastByEx);
+      setSparklinesByEx(sparklines);
+
+      // Compute milestone alert
+      const alert = computeMilestoneAlert(historyData);
+      setMilestoneAlert(alert);
+      setMilestoneAlertDismissed(false);
     }
 
     setIsTimerRunning(true);
@@ -689,6 +780,34 @@ export default function App() {
             .filter((key, idx, arr) => arr.indexOf(key) === idx)
             .map(key => [key, programme.sessions[key]] as [string, typeof programme.sessions[typeof key]]);
 
+          // Weekly completion dots
+          const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+          const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+          const WEEK_SCHEDULE: { day: string; dow: number; sessionKey: string; label: string }[] = [
+            { day: 'Mon', dow: 1, sessionKey: 'push_b', label: 'Push B' },
+            { day: 'Tue', dow: 2, sessionKey: 'pull_b', label: 'Pull B' },
+            { day: 'Wed', dow: 3, sessionKey: 'cardio_day', label: 'Cardio' },
+            { day: 'Thu', dow: 4, sessionKey: 'day_7', label: 'Rest' },
+            { day: 'Fri', dow: 5, sessionKey: 'legs_core', label: 'Legs' },
+            { day: 'Sat', dow: 6, sessionKey: 'push_a', label: 'Push A' },
+            { day: 'Sun', dow: 0, sessionKey: 'pull_a', label: 'Pull A' },
+          ];
+          const completedThisWeek = new Set<number>();
+          for (const sess of historyData) {
+            const dateStr = sess.date.split(' ')[0];
+            const d = new Date(dateStr + 'T12:00:00');
+            if (isWithinInterval(d, { start: weekStart, end: weekEnd })) {
+              // mark by dow
+              completedThisWeek.add(d.getDay());
+            }
+          }
+          // Thu (rest) always counts as done
+          completedThisWeek.add(4);
+          const todayDow2 = new Date().getDay();
+          // Count non-rest sessions completed
+          const totalScheduled = 6; // 7 days - 1 rest
+          const completedCount = WEEK_SCHEDULE.filter(s => s.dow !== 4 && completedThisWeek.has(s.dow)).length;
+
           return (
           <motion.div
             key="select"
@@ -697,9 +816,50 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             className="max-w-2xl mx-auto px-5 py-10"
           >
-            <header className="mb-8">
+            <header className="mb-6">
               <p className="text-2xl font-bold text-white">{format(new Date(), 'EEEE, MMMM do')}</p>
             </header>
+
+            {/* Weekly completion dots */}
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 glass rounded-2xl px-4 py-3"
+            >
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">This Week</span>
+                <span className="text-[10px] font-semibold text-white/30">{completedCount}/{totalScheduled} sessions</span>
+              </div>
+              <div className="flex justify-between">
+                {WEEK_SCHEDULE.map(({ day, dow, sessionKey: _sk, label: _lb }) => {
+                  const isToday = dow === todayDow2;
+                  const isDone = completedThisWeek.has(dow);
+                  const isRest = dow === 4;
+                  return (
+                    <div key={dow} className="flex flex-col items-center gap-1">
+                      <div className={cn(
+                        "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+                        isToday ? "ring-2 ring-violet-400 ring-offset-1 ring-offset-transparent" : "",
+                        isDone && isRest ? "bg-white/10" :
+                        isDone ? "bg-emerald-500" :
+                        "border border-white/20"
+                      )}>
+                        {isDone && !isRest && (
+                          <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                        {isRest && <Moon className="w-3 h-3 text-white/30" />}
+                      </div>
+                      <span className={cn(
+                        "text-[9px] font-bold uppercase tracking-tight",
+                        isToday ? "text-violet-400" : "text-white/30"
+                      )}>{day}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
 
             {/* Today's Session — Hero Card */}
             {todaySession && (
@@ -744,6 +904,29 @@ export default function App() {
                 </div>
               </motion.div>
             )}
+
+            {/* Milestone proximity alert */}
+            <AnimatePresence>
+              {milestoneAlert && !milestoneAlertDismissed && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className="mb-4 glass rounded-2xl px-4 py-3 border border-amber-500/20 bg-amber-500/5 flex items-center gap-3"
+                >
+                  <TrendingUp className="w-4 h-4 text-amber-400 shrink-0" />
+                  <p className="flex-1 text-[12px] text-white/70 leading-snug">
+                    At this pace, <span className="text-amber-400 font-bold">{milestoneAlert.milestone}kg {milestoneAlert.exercise.replace('Barbell ', '')}</span> is ~{milestoneAlert.sessionsAway} session{milestoneAlert.sessionsAway !== 1 ? 's' : ''} away
+                  </p>
+                  <button
+                    onClick={() => setMilestoneAlertDismissed(true)}
+                    className="text-white/30 hover:text-white/60 transition-colors shrink-0 p-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Other Sessions — compact grid, ordered by upcoming day */}
             <div className="mb-6">
@@ -973,11 +1156,35 @@ export default function App() {
                   isSkipped={skipped[idx]}
                   ghostWeight={recommendedWeights[ex.name] ?? null}
                   rpe={exerciseRpe[idx] ?? 7}
+                  lastSession={lastSessionByEx[idx] ?? null}
+                  sparklineData={sparklinesByEx[idx] ?? []}
                   onUpdateSet={(si, field, val) => {
                     const newData = { ...setData };
                     newData[idx][si] = { ...newData[idx][si], [field]: val };
                     setSetData(newData);
                     saveProgress(currentSessionKey, newData, skipped, elapsed);
+
+                    // PR detection — only when both weight and reps are filled
+                    if (ex.type === 'weight') {
+                      const updatedSet = { ...newData[idx][si], [field]: val };
+                      const w = parseFloat(updatedSet.weight);
+                      const r = parseInt(updatedSet.reps);
+                      if (!isNaN(w) && w > 0 && !isNaN(r) && r > 0) {
+                        const canonical = normaliseExerciseName(ex.name);
+                        const currentPR = prMap[canonical];
+                        if (!currentPR || w > currentPR.weight) {
+                          const oldWeight = currentPR?.weight ?? 0;
+                          setNewPRBanner({ exercise: ex.name, weight: w, oldPR: oldWeight });
+                          // Update prMap so it doesn't re-fire for same exercise this session
+                          setPrMap(prev => ({
+                            ...prev,
+                            [canonical]: { weight: w, reps: r, date: new Date().toISOString().split('T')[0] }
+                          }));
+                          // Auto-dismiss after 3s
+                          setTimeout(() => setNewPRBanner(null), 3000);
+                        }
+                      }
+                    }
                   }}
                   onToggleSkip={() => {
                     const newSkipped = { ...skipped, [idx]: !skipped[idx] };
@@ -1106,8 +1313,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Synergist suggestion */}
-            {synergistSuggestion && !suggestionHidden && (
+            {/* Synergist suggestion — only during countdown (not at 0) */}
+            {!showCoachingCue && synergistSuggestion && !suggestionHidden && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1151,11 +1358,83 @@ export default function App() {
                 <span className="mt-1 inline-block text-[10px] text-white/30 capitalize">{synergistSuggestion.exercise.equipment}</span>
               </motion.div>
             )}
+
+            {/* Coaching cue — shown at timer end, replaces synergist */}
+            <AnimatePresence>
+              {showCoachingCue && (
+                <motion.p
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="text-sm text-white/60 text-center mt-2"
+                >
+                  {coachingCueText}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PR Banner Overlay */}
+      <AnimatePresence>
+        {newPRBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-2.5rem)] max-w-sm"
+            onClick={() => setNewPRBanner(null)}
+          >
+            <div className="glass rounded-2xl border border-emerald-500/30 bg-emerald-500/10 backdrop-blur-xl px-5 py-4 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-0.5">NEW PR</p>
+                <p className="text-sm font-bold text-white leading-tight">
+                  {newPRBanner.exercise.replace(/^Barbell /, '')} — {newPRBanner.weight}kg
+                </p>
+                {newPRBanner.oldPR > 0 && (
+                  <p className="text-[11px] text-emerald-400 font-semibold">
+                    +{(newPRBanner.weight - newPRBanner.oldPR).toFixed(1)}kg above previous best
+                  </p>
+                )}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/** Inline SVG sparkline — 70×24px polyline of weight trend */
+function Sparkline({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const W = 70, H = 24, PAD = 2;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const xs = data.map((_, i) => PAD + (i / (data.length - 1)) * (W - PAD * 2));
+  const ys = data.map(v => H - PAD - ((v - min) / range) * (H - PAD * 2));
+  const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
+  const fillPts = `${xs[0]},${H} ${pts} ${xs[xs.length - 1]},${H}`;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0 overflow-visible">
+      <defs>
+        <linearGradient id="spk-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="white" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={fillPts} fill="url(#spk-fill)" />
+      <polyline points={pts} fill="none" stroke="white" strokeOpacity="0.3" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      {/* last point dot */}
+      <circle cx={xs[xs.length - 1]} cy={ys[ys.length - 1]} r="2" fill="white" fillOpacity="0.5" />
+    </svg>
   );
 }
 
@@ -1166,6 +1445,8 @@ function ExerciseCard({
   isSkipped,
   ghostWeight,
   rpe,
+  lastSession,
+  sparklineData,
   onUpdateSet,
   onToggleSkip,
   onAddSet,
@@ -1179,16 +1460,27 @@ function ExerciseCard({
   isSkipped: boolean;
   ghostWeight: number | null;
   rpe: number;
+  lastSession: { weight: number; reps: number } | null;
+  sparklineData: number[];
   onUpdateSet: (si: number, field: keyof SetEntry, val: any) => void;
   onToggleSkip: () => void;
   onAddSet: () => void;
   onAddDropSet: () => void;
   onStartRest: (secs: number) => void;
   onRpeChange: (val: number) => void;
-  [key: string]: any;
+  [key: string]: unknown;
 }) {
   const [isOpen, setIsOpen] = useState(idx === 0);
   const isComplete = sets.every(s => s.weight !== '' && s.reps !== '');
+
+  // Beat-last-session: find the best set logged so far this session
+  const bestCurrentWeight = sets.reduce((best, s) => {
+    const w = parseFloat(s.weight);
+    return !isNaN(w) && w > best ? w : best;
+  }, 0);
+  const beatDelta = lastSession && bestCurrentWeight > 0 && lastSession.weight > 0
+    ? bestCurrentWeight - lastSession.weight
+    : null;
 
   const weightPlaceholder = ghostWeight !== null && ghostWeight > 0
     ? String(ghostWeight)
@@ -1215,11 +1507,32 @@ function ExerciseCard({
             )}
             <MarqueeText text={exercise.name} className="text-lg font-bold text-white" />
           </div>
-          <p className="text-xs font-medium text-white/40">
-            {exercise.sets ? `${exercise.sets} sets • ` : ''}{exercise.reps || (exercise.duration_seconds ? `${exercise.duration_seconds}s` : '')}{exercise.rest_seconds ? ` • ${exercise.rest_seconds}s rest` : ''}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium text-white/40">
+              {exercise.sets ? `${exercise.sets} sets • ` : ''}{exercise.reps || (exercise.duration_seconds ? `${exercise.duration_seconds}s` : '')}{exercise.rest_seconds ? ` • ${exercise.rest_seconds}s rest` : ''}
+            </p>
+            {/* Beat-last-session delta badge */}
+            {beatDelta !== null && beatDelta > 0 && (
+              <span className="text-[10px] font-bold text-emerald-400">+{beatDelta % 1 === 0 ? beatDelta : beatDelta.toFixed(1)}kg ↑</span>
+            )}
+            {beatDelta !== null && beatDelta === 0 && (
+              <span className="text-[10px] font-bold text-white/40">✓</span>
+            )}
+          </div>
+          {/* Beat-last-session banner */}
+          {lastSession && lastSession.weight > 0 && (
+            <p className="text-[11px] text-white/40 mt-1">
+              Last: {lastSession.weight}kg × {lastSession.reps} — match or beat it
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
+          {/* Sparkline */}
+          {sparklineData.length >= 2 && (
+            <div className="shrink-0 opacity-60">
+              <Sparkline data={sparklineData} />
+            </div>
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); onToggleSkip(); }}
             className={cn(

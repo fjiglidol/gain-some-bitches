@@ -1,169 +1,200 @@
 // WorkoutWidget.js — Scriptable Home Screen Widget
-// Shows today's recommended session at a glance
-// Tap to open WorkoutEngine for logging
-// Add as Scriptable widget: long-press home screen → add widget → Scriptable
+// Shows today's session at a glance. Tap to open the PWA.
+// Setup: Copy to iCloud Drive/Scriptable/, add as Scriptable widget on home screen.
+// Also copy programme.json to iCloud Drive/Scriptable/ for exercise data.
 
-const fm = FileManager.iCloud();
-const baseDir = fm.documentsDirectory();
-const programmeFile = fm.joinPath(baseDir, "programme.json");
+const APP_URL = "https://fjiglidol.github.io/gain-some-bitches/";
 
-if (!fm.isFileDownloaded(programmeFile)) {
-  await fm.downloadFileFromiCloud(programmeFile);
-}
-
-const programme = JSON.parse(fm.readString(programmeFile));
-
-// Map day of week (0=Sun) to recommended session
-const dayMap = {
-  1: "push_a",   // Monday
-  2: "pull_a",   // Tuesday
-  3: "legs_core", // Wednesday
-  4: "cardio_day", // Thursday
-  5: "push_b",   // Friday
-  6: "pull_b",   // Saturday
-  0: "day_7"     // Sunday
+// ── Schedule (matches the app) ──
+const DAY_TO_SESSION = {
+  1: "push_b",     // Mon
+  2: "pull_b",     // Tue
+  3: "cardio_day", // Wed
+  4: "day_7",      // Thu — Rest
+  5: "legs_core",  // Fri
+  6: "push_a",     // Sat — Heavy Push
+  0: "pull_a",     // Sun — Heavy Pull
 };
 
+const SESSION_LABELS = {
+  push_a:    "Push A (Heavy)",
+  pull_a:    "Pull A (Heavy)",
+  legs_core: "Legs + Core",
+  cardio_day:"Cardio",
+  push_b:    "Push B (Pump)",
+  pull_b:    "Pull B (Pump)",
+  day_7:     "Rest / Recovery",
+};
+
+const SESSION_FOCUS = {
+  push_a:    "Strength",
+  pull_a:    "Strength",
+  legs_core: "Lower Body",
+  cardio_day:"Conditioning",
+  push_b:    "Hypertrophy",
+  pull_b:    "Hypertrophy",
+  day_7:     "Recovery",
+};
+
+const SESSION_DURATION = {
+  push_a: 75, pull_a: 75, legs_core: 80,
+  cardio_day: 55, push_b: 65, pull_b: 65, day_7: 30,
+};
+
+// ── Programme timing ──
+const PROGRAMME_START = new Date("2026-03-25");
 const today = new Date();
-const dayOfWeek = today.getDay();
-const sessionKey = dayMap[dayOfWeek];
-const session = programme.sessions[sessionKey];
-
-// Week number in programme
-const startDate = new Date("2026-03-25");
 const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-const weekNum = Math.min(8, Math.max(1, Math.ceil((today - startDate) / msPerWeek + 0.01)));
-
-// Deload check
+const weekNum = Math.min(8, Math.max(1, Math.ceil((today - PROGRAMME_START) / msPerWeek + 0.01)));
 const isDeload = weekNum === 7;
 
-// Colors
-const bgColor = new Color("#1a1a2e");
-const accentColor = new Color("#e94560");
-const textColor = new Color("#eaeaea");
-const subtleColor = new Color("#8a8a9a");
+const dayOfWeek = today.getDay();
+const sessionKey = DAY_TO_SESSION[dayOfWeek];
+const label = SESSION_LABELS[sessionKey] || sessionKey;
+const focus = SESSION_FOCUS[sessionKey] || "";
+const duration = SESSION_DURATION[sessionKey] || 60;
 
-// Build widget
-const widget = new ListWidget();
-widget.backgroundColor = bgColor;
-widget.setPadding(12, 14, 12, 14);
+// ── Try to load exercises from programme.json ──
+let exercises = [];
+try {
+  const fm = FileManager.iCloud();
+  const pFile = fm.joinPath(fm.documentsDirectory(), "programme.json");
+  if (fm.fileExists(pFile)) {
+    if (!fm.isFileDownloaded(pFile)) await fm.downloadFileFromiCloud(pFile);
+    const prog = JSON.parse(fm.readString(pFile));
+    const sess = prog.sessions[sessionKey];
+    if (sess && sess.exercises) {
+      exercises = sess.exercises;
+    } else if (sess && sess.structure) {
+      exercises = [
+        { name: "Intervals", sets: "", reps: "20 min" },
+        { name: "Steady State", sets: "", reps: "20 min" },
+        { name: "Core Circuit", sets: "", reps: "10 min" },
+      ];
+    } else if (sess && sess.options) {
+      exercises = sess.options.map(function(o) {
+        return { name: o.option, sets: "", reps: o.duration_minutes ? o.duration_minutes + "m" : "" };
+      });
+    }
+  }
+} catch (e) {
+  // No programme file — widget still works, just no exercise list
+}
 
-// Tap action: open WorkoutEngine
-widget.url = "scriptable:///run/WorkoutEngine";
+// ── Colors ──
+const bg = new Color("#0a0a0a");
+const violet = new Color("#8b5cf6");
+const emerald = new Color("#34d399");
+const white = new Color("#f0f0f0");
+const muted = new Color("#6b7280");
+const amber = new Color("#f59e0b");
 
-// Header row
-const headerStack = widget.addStack();
-headerStack.layoutHorizontally();
-headerStack.centerAlignContent();
+// ── Build Widget ──
+const w = new ListWidget();
+w.backgroundColor = bg;
+w.setPadding(14, 16, 14, 16);
+w.url = APP_URL;
+
+// Header: day + week
+const header = w.addStack();
+header.layoutHorizontally();
+header.centerAlignContent();
 
 const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const dayLabel = headerStack.addText(dayNames[dayOfWeek]);
-dayLabel.font = Font.boldSystemFont(11);
-dayLabel.textColor = accentColor;
+const dayText = header.addText(dayNames[dayOfWeek]);
+dayText.font = Font.boldSystemFont(11);
+dayText.textColor = violet;
 
-headerStack.addSpacer();
+header.addSpacer(6);
 
-const weekLabel = headerStack.addText(isDeload ? "DELOAD WK" : "WEEK " + weekNum + "/8");
-weekLabel.font = Font.mediumSystemFont(10);
-weekLabel.textColor = subtleColor;
+const focusBadge = header.addText(focus.toUpperCase());
+focusBadge.font = Font.boldSystemFont(9);
+focusBadge.textColor = emerald;
 
-widget.addSpacer(4);
+header.addSpacer();
 
-// Session title
-const label = session.label || sessionKey;
-const shortLabel = label.replace(/Day \d+ — /, "");
-const titleText = widget.addText(shortLabel);
-titleText.font = Font.boldSystemFont(16);
-titleText.textColor = textColor;
-titleText.lineLimit = 1;
+const weekText = header.addText(isDeload ? "DELOAD" : "WK " + weekNum + "/8");
+weekText.font = Font.mediumSystemFont(10);
+weekText.textColor = isDeload ? amber : muted;
 
-widget.addSpacer(2);
+w.addSpacer(6);
+
+// Session name
+const title = w.addText(label);
+title.font = Font.boldSystemFont(18);
+title.textColor = white;
+title.lineLimit = 1;
+
+w.addSpacer(2);
 
 // Duration
-const dur = session.estimated_duration_minutes;
-if (dur) {
-  const durText = widget.addText("~" + dur + " min");
-  durText.font = Font.mediumSystemFont(11);
-  durText.textColor = subtleColor;
-}
+const durText = w.addText("~" + duration + " min");
+durText.font = Font.mediumSystemFont(11);
+durText.textColor = muted;
 
-widget.addSpacer(6);
+w.addSpacer(8);
 
-// Exercise list (compact)
-let exerciseList = [];
-if (session.exercises) {
-  exerciseList = session.exercises;
-} else if (session.structure) {
-  // Cardio day
-  exerciseList = [
-    { name: "Intervals", reps: "20 min" },
-    { name: "Steady State", reps: "20 min" },
-    { name: "Core Circuit", reps: "10 min" }
-  ];
-} else if (session.options) {
-  exerciseList = session.options.map(function(o) {
-    return { name: o.option, reps: o.duration_minutes ? o.duration_minutes + " min" : "" };
-  });
-}
-
-// Show up to 6 exercises (widget space is limited)
-const maxShow = config.widgetFamily === "large" ? 12 : 6;
-const showList = exerciseList.slice(0, maxShow);
+// Exercise list
+const maxShow = config.widgetFamily === "large" ? 10 : 5;
+const showList = exercises.slice(0, maxShow);
 
 for (let i = 0; i < showList.length; i++) {
   const ex = showList[i];
-  const row = widget.addStack();
+  if (!ex) continue;
+  const exName = String(ex.name || ex.option || "Exercise");
+  const row = w.addStack();
   row.layoutHorizontally();
   row.spacing = 4;
 
-  const num = row.addText((i + 1) + ".");
+  const num = row.addText(String(i + 1) + ".");
   num.font = Font.monospacedSystemFont(10);
-  num.textColor = subtleColor;
+  num.textColor = muted;
   num.lineLimit = 1;
 
-  const nameStr = ex.name;
-  const nameTxt = row.addText(nameStr);
+  const nameTxt = row.addText(exName);
   nameTxt.font = Font.mediumSystemFont(10);
-  nameTxt.textColor = textColor;
+  nameTxt.textColor = white;
   nameTxt.lineLimit = 1;
 
   row.addSpacer();
 
-  const setsReps = (ex.sets || "") + "x" + (ex.reps || "");
-  if (setsReps !== "x") {
-    const srTxt = row.addText(setsReps);
-    srTxt.font = Font.monospacedSystemFont(9);
-    srTxt.textColor = subtleColor;
-    srTxt.lineLimit = 1;
+  const sets = ex.sets != null ? String(ex.sets) : "";
+  const reps = ex.reps != null ? String(ex.reps) : "";
+  const sr = sets + (sets && reps ? "×" : "") + reps;
+  if (sr) {
+    const srText = row.addText(sr);
+    srText.font = Font.monospacedSystemFont(9);
+    srText.textColor = muted;
+    srText.lineLimit = 1;
   }
 }
 
-if (exerciseList.length > maxShow) {
-  const moreText = widget.addText("+" + (exerciseList.length - maxShow) + " more");
-  moreText.font = Font.mediumSystemFont(9);
-  moreText.textColor = subtleColor;
+if (exercises.length > maxShow) {
+  const more = w.addText("+" + (exercises.length - maxShow) + " more");
+  more.font = Font.mediumSystemFont(9);
+  more.textColor = muted;
 }
 
-widget.addSpacer();
+w.addSpacer();
 
 // Footer
-const footer = widget.addStack();
-footer.layoutHorizontally();
-const tapText = footer.addText("Tap to log");
-tapText.font = Font.mediumSystemFont(9);
-tapText.textColor = accentColor;
+const foot = w.addStack();
+foot.layoutHorizontally();
+const tap = foot.addText("Tap to open");
+tap.font = Font.mediumSystemFont(9);
+tap.textColor = violet;
 
 if (isDeload) {
-  footer.addSpacer();
-  const deloadText = footer.addText("50% load this week");
-  deloadText.font = Font.mediumSystemFont(9);
-  deloadText.textColor = new Color("#ffa500");
+  foot.addSpacer();
+  const dl = foot.addText("50% load this week");
+  dl.font = Font.mediumSystemFont(9);
+  dl.textColor = amber;
 }
 
 if (config.runsInWidget) {
-  Script.setWidget(widget);
+  Script.setWidget(w);
 } else {
-  await widget.presentMedium();
+  await w.presentMedium();
 }
 
 Script.complete();
