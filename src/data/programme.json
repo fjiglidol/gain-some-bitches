@@ -69,7 +69,7 @@
 
   "sessions": {
     "push_a": {
-      "label": "Day 1 — Push A (Heavy)",
+      "label": "Sat — Push A (Heavy)",
       "focus": "Strength — compound-led, progressive overload + serratus anterior",
       "estimated_duration_minutes": 70,
       "rep_range": "5-8",
@@ -178,7 +178,7 @@
     },
 
     "pull_a": {
-      "label": "Day 2 — Pull A (Heavy)",
+      "label": "Sun — Pull A (Heavy)",
       "focus": "Strength — vertical and horizontal pull, pull-up priority + lower trap activation",
       "estimated_duration_minutes": 70,
       "rep_range": "5-8",
@@ -290,7 +290,7 @@
     },
 
     "legs_core": {
-      "label": "Day 3 — Legs + Core",
+      "label": "Fri — Legs + Core",
       "focus": "Lower body strength and hypertrophy — calf priority baked in",
       "estimated_duration_minutes": 75,
       "rep_range": "5-15 depending on exercise",
@@ -476,7 +476,7 @@
     },
 
     "cardio_day": {
-      "label": "Day 4 — Cardio (Intervals + Steady State + Core)",
+      "label": "Wed — Cardio (Intervals + Steady State + Core)",
       "focus": "Aerobic base building, fat oxidation, calorie burn",
       "estimated_duration_minutes": 55,
       "post_workout_cardio": null,
@@ -554,7 +554,7 @@
     },
 
     "push_b": {
-      "label": "Day 5 — Push B (Pump / Supersets)",
+      "label": "Mon — Push B (Pump / Supersets)",
       "focus": "Metabolic stress, muscle fullness, volume accumulation",
       "estimated_duration_minutes": 60,
       "rep_range": "10-20",
@@ -687,7 +687,7 @@
     },
 
     "pull_b": {
-      "label": "Day 6 — Pull B (Pump / Supersets)",
+      "label": "Tue — Pull B (Pump / Supersets)",
       "focus": "Back thickness, rear delt, arm pump — metabolic stress + brachioradialis/forearms",
       "estimated_duration_minutes": 65,
       "rep_range": "10-20",
@@ -856,7 +856,7 @@
     },
 
     "day_7": {
-      "label": "Day 7 — Rest or Light Active Recovery",
+      "label": "Thu — Rest or Light Active Recovery",
       "estimated_duration_minutes": 30,
       "options": [
         {
