@@ -1,0 +1,638 @@
+APPLE SHORTCUTS WORKOUT LOGGER - IMPLEMENTATION PLAN
+=====================================================
+
+VERDICT: USE SHORTCUTS + SCRIPTABLE (HYBRID APPROACH)
+------------------------------------------------------
+
+Pure Apple Shortcuts can handle the menu, prompts, and CSV appending. But
+parsing JSON and looping through exercises with dynamic prompts is painful
+in Shortcuts alone -- the "Repeat with Each" action combined with "Ask for
+Input" works, but building the JSON parsing logic in Shortcuts is brittle.
+
+RECOMMENDED SETUP:
+  - Scriptable (free iOS app) handles the logic: reads JSON, builds prompts,
+    formats CSV lines
+  - Apple Shortcuts calls Scriptable, then handles file I/O and notifications
+  - Apple Shortcuts Automation triggers the reminder
+
+This gives you reliable JSON parsing, string formatting, and looping in
+JavaScript, while Shortcuts handles what it's good at: file access, iCloud
+Drive, notifications, and time-based automations.
+
+
+========================================================================
+FILE LOCATIONS (iCloud Drive)
+========================================================================
+
+Programme JSON:  iCloud Drive/Shortcuts/Workout_Program.json
+Workout log CSV: iCloud Drive/Shortcuts/Workout_History.csv
+
+IMPORTANT - PATH REALITY:
+  On iPhone, Shortcuts can only natively read/write files in:
+    iCloud Drive/Shortcuts/
+
+  On Mac, this maps to:
+    ~/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/
+
+  Your current files are at ~/Desktop/Fitness/ which is NOT directly
+  accessible to iPhone Shortcuts. You have two options:
+
+  OPTION A (recommended): Move the working files into iCloud Drive/Shortcuts/
+    - Put Workout_Program.json in iCloud Drive/Shortcuts/
+    - Put Workout_History.csv in iCloud Drive/Shortcuts/
+    - On Mac, create a symlink so they also appear on your Desktop:
+        ln -s ~/Library/Mobile\ Documents/iCloud~is~workflow~my~workflows/Documents/Workout_Program.json ~/Desktop/Fitness/Workout_Program.json
+        ln -s ~/Library/Mobile\ Documents/iCloud~is~workflow~my~workflows/Documents/Workout_History.csv ~/Desktop/Fitness/Workout_History.csv
+
+  OPTION B: Use the Shortcuts "File" actions with "Ask Where" disabled and
+    specify the full iCloud path. Shortcuts CAN access broader iCloud Drive
+    paths using the "Get File" action with a path like:
+        /Fitness/Workout_Program.json
+    This works if the Fitness folder is in your iCloud Drive root (not Desktop).
+    Desktop folders synced via iCloud are accessible but the path is less
+    predictable in Shortcuts.
+
+  VERDICT: Go with Option A. Symlinks keep your Mac workflow unchanged.
+
+
+========================================================================
+PART 1: SCRIPTABLE SCRIPT - "Workout Engine"
+========================================================================
+
+Install Scriptable from the App Store (free). Create a new script called
+"WorkoutEngine". This script does the heavy lifting.
+
+--- BEGIN SCRIPTABLE SCRIPT ---
+
+// WorkoutEngine.js
+// Called by Apple Shortcuts with an action parameter
+
+const fm = FileManager.iCloud();
+const dir = fm.documentsDirectory(); // This is iCloud Drive/Scriptable/
+// We'll use bookmarks or pass file contents from Shortcuts instead.
+
+// When called from Shortcuts, input comes as args.plainTexts or args.shortcutParameter
+const input = args.shortcutParameter;
+
+// Parse the input - Shortcuts will pass a JSON string with action + data
+let params;
+try {
+  params = JSON.parse(input);
+} catch(e) {
+  // If plain text, treat as action name
+  params = { action: input };
+}
+
+if (params.action === "get_sessions") {
+  // Return list of session types for Shortcuts menu
+  const programme = JSON.parse(params.programmeJSON);
+  const sessions = Object.keys(programme.sessions);
+  Script.setShortcutOutput(JSON.stringify(sessions));
+}
+
+else if (params.action === "get_exercises") {
+  // Return formatted exercise list for display
+  const programme = JSON.parse(params.programmeJSON);
+  const session = programme.sessions[params.sessionType];
+
+  let display = "";
+  display += params.sessionType.toUpperCase() + " DAY\n";
+  display += session.muscle_focus + "\n";
+  display += "─".repeat(30) + "\n\n";
+
+  session.exercises.forEach((ex, i) => {
+    display += (i+1) + ". " + ex.name + "\n";
+    display += "   " + ex.sets + " x " + ex.reps;
+    if (ex.notes) display += "  (" + ex.notes + ")";
+    display += "\n\n";
+  });
+
+  Script.setShortcutOutput(display);
+}
+
+else if (params.action === "build_prompts") {
+  // Return exercise list as JSON for Shortcuts to loop through
+  const programme = JSON.parse(params.programmeJSON);
+  const session = programme.sessions[params.sessionType];
+  Script.setShortcutOutput(JSON.stringify(session.exercises));
+}
+
+else if (params.action === "format_csv_row") {
+  // Format a single exercise log entry as CSV
+  // params: date, sessionType, exerciseName, weight, sets, reps, notes
+  const row = [
+    params.date,
+    params.sessionType,
+    params.exerciseName,
+    params.weight || "",
+    params.sets || "",
+    params.reps || "",
+    (params.notes || "").replace(/,/g, ";")  // escape commas in notes
+  ].join(",");
+
+  Script.setShortcutOutput(row);
+}
+
+else if (params.action === "format_all_rows") {
+  // Takes the full collected workout data and formats all CSV rows at once
+  // params.entries = array of {name, sets, reps, weight, notes}
+  // params.date, params.sessionType
+  const lines = params.entries.map(e => {
+    return [
+      params.date,
+      params.sessionType,
+      e.name,
+      e.weight || "",
+      e.sets || "",
+      e.reps || "",
+      (e.notes || "").replace(/,/g, ";")
+    ].join(",");
+  });
+
+  Script.setShortcutOutput(lines.join("\n"));
+}
+
+Script.complete();
+
+--- END SCRIPTABLE SCRIPT ---
+
+NOTE: Save this in Scriptable. It will live in iCloud Drive/Scriptable/WorkoutEngine.js
+and sync across devices automatically.
+
+
+========================================================================
+PART 2: APPLE SHORTCUT - "Log Workout"
+========================================================================
+
+Create this shortcut step by step in the Shortcuts app:
+
+STEP 1: GET CURRENT TIMESTAMP
+  Action: Date
+    -> "Current Date"
+  Action: Format Date
+    -> Custom format: "yyyy-MM-dd (EEE) HH:mm"
+    -> Save to variable: "Timestamp"
+  Action: Format Date (again, for CSV)
+    -> Custom format: "yyyy-MM-dd (EEE)"
+    -> Save to variable: "DateForCSV"
+
+STEP 2: READ THE PROGRAMME JSON
+  Action: Get File
+    -> File Path: "Shortcuts/Workout_Program.json"
+    -> Service: iCloud Drive
+    -> Error if not found: ON
+  Action: Get Text from [File]
+    -> Save to variable: "ProgrammeJSON"
+
+STEP 3: GET SESSION LIST FROM SCRIPTABLE
+  Action: Run Scriptable Script
+    -> Script: WorkoutEngine
+    -> Parameter (Text):
+      {"action":"get_sessions","programmeJSON": [ProgrammeJSON variable]}
+
+    PROBLEM: You can't easily embed a variable inside JSON text in Shortcuts.
+    WORKAROUND: Use a Text action to build the JSON string:
+
+  Action: Text
+    -> Content: {"action":"get_sessions","programmeJSON":INSERT_VARIABLE_HERE}
+
+    Actually, this is fragile because the JSON contains quotes.
+
+    BETTER APPROACH - skip Scriptable for the menu and hardcode session types:
+
+REVISED STEP 3: CHOOSE SESSION TYPE
+  Action: Choose from Menu
+    -> Prompt: "Which session?"
+    -> Options:
+      - Push
+      - Pull
+      - Legs
+      - Cardio
+      - Active Rest
+  Save result to variable: "SessionType"
+
+STEP 4: SHOW TODAY'S WORKOUT (PREVIEW)
+  Action: Text
+    -> Build JSON: {"action":"get_exercises","sessionType":"[SessionType]","programmeJSON":[ProgrammeJSON]}
+
+  REVISED APPROACH - since embedding JSON-in-JSON is fragile in Shortcuts,
+  simplify by having Scriptable read the file directly:
+
+========================================================================
+REVISED ARCHITECTURE (SIMPLER)
+========================================================================
+
+Actually, the cleanest approach: have Scriptable read the JSON file itself
+(using FileManager.iCloud()) and do ALL the logic. Shortcuts just:
+  1. Triggers Scriptable
+  2. Receives the formatted CSV rows back
+  3. Appends to the CSV file
+
+But there's a catch: Scriptable's iCloud directory is separate from
+Shortcuts' iCloud directory. So we need the JSON in Scriptable's folder,
+OR use a shared location.
+
+CLEANEST SOLUTION: Put Workout_Program.json in iCloud Drive/Scriptable/
+and Workout_History.csv in iCloud Drive/Shortcuts/ (since Shortcuts does
+the file appending).
+
+Let me redesign with this in mind.
+
+
+========================================================================
+FINAL ARCHITECTURE (PROVEN APPROACH)
+========================================================================
+
+COMPONENT 1: Scriptable script "WorkoutEngine"
+  - Reads Workout_Program.json from its own iCloud folder
+  - Presents all UI (menus, prompts) using Scriptable's Alert/TextField APIs
+  - Collects all workout data
+  - Returns formatted CSV rows as output to Shortcuts
+
+COMPONENT 2: Apple Shortcut "Log Workout" (very simple)
+  - Runs WorkoutEngine via "Run Scriptable Script"
+  - Takes the returned CSV text
+  - Appends it to Workout_History.csv in iCloud Drive/Shortcuts/
+  - Shows confirmation notification
+
+COMPONENT 3: Shortcuts Automation
+  - Time-based trigger for the notification/reminder
+
+This is much more reliable because Scriptable handles all the fiddly
+string/JSON work natively in JavaScript.
+
+
+========================================================================
+COMPONENT 1: SCRIPTABLE SCRIPT (FINAL VERSION)
+========================================================================
+
+Save as "WorkoutEngine" in Scriptable:
+
+--- BEGIN SCRIPT ---
+
+// WorkoutEngine.js - Full workout logging flow
+// Reads programme, shows exercises, collects input, returns CSV rows
+
+const fm = FileManager.iCloud();
+const baseDir = fm.documentsDirectory();
+const programmeFile = fm.joinPath(baseDir, "Workout_Program.json");
+
+// Ensure file is downloaded from iCloud
+if (!fm.isFileDownloaded(programmeFile)) {
+  await fm.downloadFileFromiCloud(programmeFile);
+}
+
+const programmeRaw = fm.readString(programmeFile);
+const programme = JSON.parse(programmeRaw);
+
+// STEP 1: Choose session type
+const sessionNames = Object.keys(programme.sessions);
+const sessionAlert = new Alert();
+sessionAlert.title = "Workout Logger";
+sessionAlert.message = "Which session are you doing?";
+sessionNames.forEach(name => sessionAlert.addAction(name));
+sessionAlert.addCancelAction("Cancel");
+const sessionIdx = await sessionAlert.presentSheet();
+
+if (sessionIdx === -1) {
+  Script.setShortcutOutput("CANCELLED");
+  Script.complete();
+}
+
+const sessionType = sessionNames[sessionIdx];
+const session = programme.sessions[sessionType];
+
+// STEP 2: Show the workout plan
+const previewAlert = new Alert();
+previewAlert.title = sessionType.toUpperCase() + " - " + session.muscle_focus;
+let previewMsg = "";
+session.exercises.forEach((ex, i) => {
+  previewMsg += (i+1) + ". " + ex.name + " - " + ex.sets + "x" + ex.reps;
+  if (ex.notes) previewMsg += " (" + ex.notes + ")";
+  previewMsg += "\n";
+});
+previewAlert.message = previewMsg;
+previewAlert.addAction("Start Logging");
+previewAlert.addCancelAction("Just Viewing");
+const startChoice = await previewAlert.presentAlert();
+
+if (startChoice === -1) {
+  Script.setShortcutOutput("VIEWED_ONLY");
+  Script.complete();
+}
+
+// STEP 3: Loop through exercises and collect data
+const now = new Date();
+const dateStr = now.getFullYear() + "-"
+  + String(now.getMonth()+1).padStart(2,"0") + "-"
+  + String(now.getDate()).padStart(2,"0");
+const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const dayStr = days[now.getDay()];
+const dateCSV = dateStr + " (" + dayStr + ")";
+
+// Also capture start time
+const startTime = String(now.getHours()).padStart(2,"0") + ":"
+  + String(now.getMinutes()).padStart(2,"0");
+
+const loggedEntries = [];
+
+for (let i = 0; i < session.exercises.length; i++) {
+  const ex = session.exercises[i];
+
+  const exAlert = new Alert();
+  exAlert.title = ex.name;
+  exAlert.message = "Target: " + ex.sets + " x " + ex.reps
+    + (ex.notes ? "\nNote: " + ex.notes : "");
+
+  // Different prompts based on exercise type
+  if (ex.type === "weight") {
+    exAlert.addTextField("Weight (kg)", "");
+    exAlert.addTextField("Sets completed", String(ex.sets));
+    exAlert.addTextField("Reps achieved", ex.reps);
+    exAlert.addTextField("Notes (optional)", "");
+  } else if (ex.type === "timed") {
+    exAlert.addTextField("Duration achieved", ex.reps);
+    exAlert.addTextField("Sets completed", String(ex.sets));
+    exAlert.addTextField("Notes (optional)", "");
+  } else if (ex.type === "cardio") {
+    exAlert.addTextField("Duration", ex.reps);
+    exAlert.addTextField("Notes (optional)", "");
+  } else {
+    // bodyweight
+    exAlert.addTextField("Sets completed", String(ex.sets));
+    exAlert.addTextField("Reps achieved", ex.reps);
+    exAlert.addTextField("Notes (optional)", "");
+  }
+
+  exAlert.addAction("Log");
+  exAlert.addAction("Skip");
+  exAlert.addCancelAction("Done (stop here)");
+
+  const choice = await exAlert.presentAlert();
+
+  if (choice === -1) {
+    // User chose to stop early
+    break;
+  }
+
+  if (choice === 1) {
+    // Skip this exercise
+    continue;
+  }
+
+  // choice === 0: Log it
+  let entry = { name: ex.name, weight: "", sets: "", reps: "", notes: "" };
+
+  if (ex.type === "weight") {
+    entry.weight = exAlert.textFieldValue(0);
+    entry.sets = exAlert.textFieldValue(1);
+    entry.reps = exAlert.textFieldValue(2);
+    entry.notes = exAlert.textFieldValue(3);
+  } else if (ex.type === "timed") {
+    entry.reps = exAlert.textFieldValue(0);
+    entry.sets = exAlert.textFieldValue(1);
+    entry.notes = exAlert.textFieldValue(2);
+  } else if (ex.type === "cardio") {
+    entry.reps = exAlert.textFieldValue(0);
+    entry.notes = exAlert.textFieldValue(1);
+  } else {
+    entry.sets = exAlert.textFieldValue(0);
+    entry.reps = exAlert.textFieldValue(1);
+    entry.notes = exAlert.textFieldValue(2);
+  }
+
+  loggedEntries.push(entry);
+}
+
+// STEP 4: Capture end time
+const endNow = new Date();
+const endTime = String(endNow.getHours()).padStart(2,"0") + ":"
+  + String(endNow.getMinutes()).padStart(2,"0");
+
+// STEP 5: Format as CSV rows
+// Header: Date,Session_Type,Exercise,Weight_kg,Sets,Reps,Notes
+if (loggedEntries.length === 0) {
+  Script.setShortcutOutput("NO_DATA");
+  Script.complete();
+}
+
+const csvRows = loggedEntries.map(e => {
+  // Escape commas and quotes in notes
+  let notes = (e.notes || "").replace(/"/g, '""');
+  if (notes.includes(",")) notes = '"' + notes + '"';
+
+  return [dateCSV, sessionType, e.name, e.weight, e.sets, e.reps, notes].join(",");
+});
+
+// Add a metadata row with timestamps
+const metaNote = "Session " + startTime + "-" + endTime;
+const metaRow = [dateCSV, sessionType, "SESSION_META", "", "", "", metaNote].join(",");
+
+const output = csvRows.join("\n") + "\n" + metaRow;
+
+// Show summary
+const summaryAlert = new Alert();
+summaryAlert.title = "Workout Complete";
+summaryAlert.message = loggedEntries.length + " exercises logged\n"
+  + "Time: " + startTime + " - " + endTime + "\n"
+  + "Session: " + sessionType;
+summaryAlert.addAction("Save");
+summaryAlert.addCancelAction("Discard");
+const saveChoice = await summaryAlert.presentAlert();
+
+if (saveChoice === -1) {
+  Script.setShortcutOutput("DISCARDED");
+  Script.complete();
+}
+
+Script.setShortcutOutput(output);
+Script.complete();
+
+--- END SCRIPT ---
+
+
+========================================================================
+COMPONENT 2: APPLE SHORTCUT - "Log Workout"
+========================================================================
+
+Build this in the Shortcuts app on your iPhone:
+
+ACTION 1: Run Script (Scriptable)
+  - Script: WorkoutEngine
+  - (Leave parameter empty - the script handles everything)
+  -> Output saved as "ScriptResult"
+
+ACTION 2: If [ScriptResult] [is] "CANCELLED"
+  -> Stop this shortcut
+
+ACTION 3: If [ScriptResult] [is] "VIEWED_ONLY"
+  -> Show Notification: "Workout previewed. Good luck!"
+  -> Stop this shortcut
+
+ACTION 4: If [ScriptResult] [is] "NO_DATA"
+  -> Show Notification: "No exercises logged."
+  -> Stop this shortcut
+
+ACTION 5: If [ScriptResult] [is] "DISCARDED"
+  -> Stop this shortcut
+
+ACTION 6: Otherwise (we have CSV data)
+
+ACTION 7: Get File
+  - File Path: Shortcuts/Workout_History.csv
+  - Service: iCloud Drive
+  - If not found, don't error (we'll create it)
+
+ACTION 8: If [File] [has any value]
+  -> Get Text from [File]
+  -> Set variable "ExistingCSV" to [Text]
+ELSE
+  -> Set variable "ExistingCSV" to "Date,Session_Type,Exercise,Weight_kg,Sets,Reps,Notes"
+END IF
+
+ACTION 9: Text
+  -> [ExistingCSV]
+     [ScriptResult]
+  (This concatenates existing content with new rows, with a newline between)
+
+ACTION 10: Save File
+  -> Save [Text] to Shortcuts/Workout_History.csv
+  -> Service: iCloud Drive
+  -> Overwrite: YES
+
+ACTION 11: Show Notification
+  -> Title: "Workout Saved"
+  -> Body: "Logged to Workout_History.csv"
+
+
+========================================================================
+COMPONENT 3: AUTOMATION - WORKOUT REMINDER
+========================================================================
+
+Apple Shortcuts Automations cannot truly "learn" your schedule. But here's
+what's actually possible:
+
+OPTION A: FIXED TIME AUTOMATION (SIMPLEST)
+  Go to: Shortcuts app -> Automation tab -> + -> Time of Day
+  - Time: e.g., 5:00 PM (or whenever you typically go to the gym)
+  - Repeat: Daily
+  - Run Immediately: OFF (so it sends a notification you tap to run)
+  - When tapped, it runs the "Log Workout" shortcut
+
+OPTION B: DAY-SPECIFIC AUTOMATIONS (BETTER)
+  Create separate automations for each training day:
+
+  Monday 5PM    -> Notification: "Push day. Ready to log?"  -> Run "Log Workout"
+  Tuesday 5PM   -> Notification: "Pull day. Ready to log?"  -> Run "Log Workout"
+  Wednesday 5PM -> Notification: "Leg day. Ready to log?"   -> Run "Log Workout"
+  Thursday 5PM  -> Notification: "Push day. Ready to log?"  -> Run "Log Workout"
+  Friday 5PM    -> Notification: "Pull day. Ready to log?"  -> Run "Log Workout"
+  Saturday 10AM -> Notification: "Cardio + core. Ready?"    -> Run "Log Workout"
+  Sunday 10AM   -> Notification: "Active rest / mobility"   -> Run "Log Workout"
+
+OPTION C: LOCATION-BASED (SMARTEST WITHOUT LEARNING)
+  Shortcuts -> Automation -> Arrive at [Gym Location]
+  - When you arrive at the gym, it notifies you to log your workout
+  - Combine with a time condition (e.g., only between 4PM-9PM) to avoid
+    false triggers when walking past the gym
+
+ABOUT "LEARNING" YOUR SCHEDULE:
+  iOS Focus modes and Siri Suggestions do some pattern learning, but
+  Shortcuts can't access that data. True schedule learning would require
+  a server-side component or a dedicated app. For now, the day-specific
+  automations (Option B) combined with location (Option C) are the most
+  practical approach.
+
+
+========================================================================
+FILE SYNC SETUP ON MAC
+========================================================================
+
+Run these commands on your Mac terminal to create symlinks:
+
+  # Scriptable's iCloud folder (for the JSON programme)
+  ln -sf ~/Library/Mobile\ Documents/iCloud~dk~simonbs~Scriptable/Documents/Workout_Program.json ~/Desktop/Fitness/Workout_Program_linked.json
+
+  # Shortcuts' iCloud folder (for the CSV log)
+  ln -sf ~/Library/Mobile\ Documents/iCloud~is~workflow~my~workflows/Documents/Workout_History.csv ~/Desktop/Fitness/Workout_History_linked.csv
+
+Or do it the other direction -- symlink FROM the app folders TO your Desktop:
+
+  # Copy your current JSON to Scriptable's iCloud folder
+  cp ~/Desktop/Fitness/Workout_Program.json ~/Library/Mobile\ Documents/iCloud~dk~simonbs~Scriptable/Documents/
+
+  # Copy your current CSV to Shortcuts' iCloud folder
+  cp ~/Desktop/Fitness/Workout_History.csv ~/Library/Mobile\ Documents/iCloud~is~workflow~my~workflows/Documents/
+
+  # Then symlink them back so ~/Desktop/Fitness always has the latest
+  ln -sf ~/Library/Mobile\ Documents/iCloud~dk~simonbs~Scriptable/Documents/Workout_Program.json ~/Desktop/Fitness/Workout_Program.json
+  ln -sf ~/Library/Mobile\ Documents/iCloud~is~workflow~my~workflows/Documents/Workout_History.csv ~/Desktop/Fitness/Workout_History.csv
+
+ALTERNATIVE: If you don't want symlinks, just keep in mind:
+  - Edit the programme JSON in: iCloud Drive > Scriptable folder
+  - View/analyze the CSV from: iCloud Drive > Shortcuts folder
+  - Both are accessible in Finder under iCloud Drive
+
+
+========================================================================
+CSV FORMAT (MAINTAINED COMPATIBILITY)
+========================================================================
+
+The CSV format matches your existing Workout_History.csv:
+
+  Date,Session_Type,Exercise,Weight_kg,Sets,Reps,Notes
+
+Example output from a logged Push session:
+
+  2026-03-25 (Tue),Push,Barbell Bench Press,80,4,6-8,
+  2026-03-25 (Tue),Push,Incline DB Press,16,3,10,Felt good
+  2026-03-25 (Tue),Push,Seated DB Shoulder Press,12,3,10,
+  2026-03-25 (Tue),Push,Lateral Raises,8,3,15,
+  2026-03-25 (Tue),Push,Tricep Pushdown,15,3,12,
+  2026-03-25 (Tue),Push,Plank,,3,45s,
+  2026-03-25 (Tue),Push,Incline Walk,,1,15 min,
+  2026-03-25 (Tue),Push,SESSION_META,,,,"Session 17:05-18:15"
+
+The SESSION_META row captures start/end timestamps for training pattern
+analysis later. You can filter these out when analysing exercise data.
+
+
+========================================================================
+SETUP CHECKLIST
+========================================================================
+
+  [ ] 1. Install Scriptable from App Store (free)
+  [ ] 2. Copy Workout_Program.json to Scriptable's iCloud folder
+         (On iPhone: Files app -> iCloud Drive -> Scriptable)
+  [ ] 3. Open Scriptable, create new script "WorkoutEngine"
+         Paste the script from Component 1 above
+  [ ] 4. Copy Workout_History.csv to Shortcuts' iCloud folder
+         (On iPhone: Files app -> iCloud Drive -> Shortcuts)
+  [ ] 5. Open Shortcuts app, create "Log Workout" shortcut
+         Build it following Component 2 steps
+  [ ] 6. Test: Run the shortcut manually, verify CSV gets appended
+  [ ] 7. Set up Automations per Component 3
+  [ ] 8. On Mac: set up symlinks per File Sync section
+  [ ] 9. Verify round-trip: log on iPhone, check CSV updates on Mac
+
+
+========================================================================
+FUTURE ENHANCEMENTS
+========================================================================
+
+  - Add a "View Last Session" shortcut that reads the CSV and shows
+    your most recent weights for the chosen session type (useful for
+    progressive overload -- knowing what you did last time)
+
+  - Add a "Quick Log" mode that pre-fills weights from last session
+    (Scriptable reads the CSV, finds last Push/Pull/Legs entry, and
+    pre-populates the text fields)
+
+  - Export weekly summary via Shortcuts + Scriptable
+
+  - Use the SESSION_META timestamps to build a "when do I usually train"
+    heatmap in a Python/Numbers analysis
+
+========================================================================
+END OF IMPLEMENTATION PLAN
+========================================================================

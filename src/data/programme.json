@@ -1,0 +1,956 @@
+{
+  "programme_name": "PPL Recomp — Rebuild Phase (Option C: A/B Variation)",
+  "phase": "Recomposition — Lean Phase",
+  "start_date": "2026-03-25",
+  "end_date": "2026-05-20",
+  "duration_weeks": 8,
+  "deload_week": 7,
+  "target_frequency": "5-6 days/week (minimum 4)",
+  "minimum_priority_order": ["Pull A or B", "Legs", "Push A or B", "Cardio"],
+
+  "athlete": {
+    "age": 24,
+    "height_cm": 182,
+    "weight_kg": 81,
+    "experience": "intermediate-beginner (~1 year)",
+    "current_lifts": {
+      "bench_press_kg": 80,
+      "squat_kg_x6": 90,
+      "pull_ups": "assisted only, max 5 reps"
+    },
+    "weak_points": ["calves", "pull-up strength", "cardio capacity", "lower abdominal fat"],
+    "equipment": "university gym — barbells, dumbbells, cables, machines, pull-up bar, assisted pull-up machine"
+  },
+
+  "week_8_targets": {
+    "bench_press_kg": "97.5kg x7-8 (revised — 90kg x8 already hit on 2026-03-23)",
+    "squat": "97.5kg x7-8",
+    "rdl": "77.5kg x10",
+    "incline_db": "46kg/hand x12",
+    "ohp_machine": "18kg x12",
+    "pull_ups": "1-3 unassisted reps or significant reduction in assistance weight",
+    "cardio": "45 min steady state without difficulty",
+    "body_composition": "visible reduction in lower stomach fat, scale ~80-81kg",
+    "stretch_goal": "100kg bench — realistic at 10-12 week mark if week 8 targets are hit"
+  },
+
+  "weekly_template": {
+    "day_1": "Push A — Heavy Compounds (gym)",
+    "day_2": "Pull A — Heavy Compounds (gym)",
+    "day_3": "Legs + Core (gym)",
+    "day_4": "Cardio — Intervals + Steady State + Core Circuit (outdoor or gym)",
+    "day_5": "Push B — Pump / Supersets (gym)",
+    "day_6": "Pull B — Pump / Supersets (gym)",
+    "day_7": "Rest OR Light Cardio (20-30 min easy walk/cycle)"
+  },
+
+  "nutrition": {
+    "goal": "Recomposition — slight caloric deficit on rest/cardio days, maintenance on lifting days",
+    "estimated_maintenance_kcal": 2700,
+    "lifting_day_target_kcal": 2600,
+    "cardio_rest_day_target_kcal": 2300,
+    "protein_g_per_kg": 2.0,
+    "protein_target_g": 160,
+    "carbohydrate_strategy": "Prioritise carbs around training (pre and post-workout). Keep evening carbs moderate.",
+    "fat_target_g": "55-70g",
+    "meal_timing": {
+      "pre_workout": "Carb + protein meal 60-90 min before training. Example: rice + chicken, oats + protein powder, or a banana + Greek yoghurt.",
+      "post_workout": "Protein + carb within 60 min. Example: protein shake + fruit, or chicken + rice.",
+      "daily_meals": "3 main meals + 1-2 snacks. High-protein snacks: Greek yoghurt, cottage cheese, eggs, protein shake, tuna."
+    },
+    "practical_student_tips": [
+      "Batch cook rice, chicken, and eggs at the start of the week.",
+      "Keep protein powder and oats as staples — cheap and effective.",
+      "Avoid liquid calories (juice, alcohol) — they undermine the deficit silently.",
+      "Track food for at least 2 weeks to build awareness, then estimate.",
+      "Aim for 160g protein daily as the non-negotiable pillar of your nutrition."
+    ]
+  },
+
+  "sessions": {
+    "push_a": {
+      "label": "Day 1 — Push A (Heavy)",
+      "focus": "Strength — compound-led, progressive overload + serratus anterior",
+      "estimated_duration_minutes": 70,
+      "rep_range": "5-8",
+      "rest_between_sets_seconds": "120-180",
+      "post_workout_cardio": {
+        "type": "cardio",
+        "exercise": "Incline treadmill walk",
+        "duration_minutes": 12,
+        "intensity": "Incline 10-12%, speed 5.5-6 km/h, conversational pace",
+        "notes": "Non-negotiable on A days. Burns additional calories without impairing recovery."
+      },
+      "exercises": [
+        {
+          "name": "Barbell Bench Press",
+          "type": "weight",
+          "sets": 4,
+          "reps": "5-6",
+          "rpe": "7-8",
+          "rest_seconds": 180,
+          "notes": "Main strength indicator. Add 2.5kg when you hit 8 clean reps across all sets. Already at 90kg x8 (2026-03-23). Push past 90.",
+          "progression": "2.5kg increment when 4x6 achieved at RPE 8 or less. Track every session.",
+          "form_cues": [
+            "Retract and depress scapulae before unracking.",
+            "Feet flat on floor, slight arch in lower back.",
+            "Bar path: slight diagonal — touches mid-chest, presses back toward the rack.",
+            "Full pause at chest on the last rep of each set to confirm control."
+          ]
+        },
+        {
+          "name": "Overhead Press (Barbell)",
+          "type": "weight",
+          "sets": 4,
+          "reps": "5-6",
+          "rpe": "7-8",
+          "rest_seconds": 150,
+          "notes": "Strict standing press. Builds shoulder width and structural strength that carries over to aesthetics.",
+          "progression": "2.5kg increment when 4x6 achieved clean.",
+          "form_cues": [
+            "Grip just outside shoulder width.",
+            "Brace core hard — no excessive lumbar extension.",
+            "Bar moves in a straight line, head moves back to allow clearance then forward once bar passes.",
+            "Lockout fully at the top."
+          ]
+        },
+        {
+          "name": "Incline Dumbbell Press",
+          "type": "weight",
+          "sets": 3,
+          "reps": "6-8",
+          "rpe": "8",
+          "rest_seconds": 120,
+          "notes": "Upper chest emphasis. Set bench to 30-35 degrees — not 45, which shifts load to shoulders.",
+          "progression": "Move up 2kg per side when 3x8 achieved at RPE 8 or less.",
+          "form_cues": [
+            "Elbows at ~45 degrees to torso, not flared out.",
+            "Full stretch at the bottom, squeeze at the top.",
+            "Control the eccentric (3 seconds down)."
+          ]
+        },
+        {
+          "name": "Dumbbell Lateral Raise",
+          "type": "weight",
+          "sets": 3,
+          "reps": "10-12",
+          "rpe": "8",
+          "rest_seconds": 90,
+          "notes": "Medial delt isolation. Key for shoulder width — high priority for aesthetics.",
+          "form_cues": [
+            "Slight forward lean at hips.",
+            "Lead with the elbow, not the wrist.",
+            "Pinky slightly higher than thumb at the top.",
+            "Control the descent — do not let gravity do the work."
+          ]
+        },
+        {
+          "name": "Overhead Tricep Extension (EZ Bar or Cable)",
+          "type": "weight",
+          "sets": 3,
+          "reps": "8-10",
+          "rpe": "8",
+          "rest_seconds": 90,
+          "notes": "Overhead position maximises long-head stretch — this is the largest tricep head and most visible from behind.",
+          "form_cues": [
+            "Keep elbows pointing straight up — do not let them flare.",
+            "Full stretch at the bottom, full extension at the top.",
+            "Upper arm stays stationary throughout."
+          ]
+        },
+        {
+          "name": "Serratus Cable Crunch (or Serratus Push-Up)",
+          "type": "weight",
+          "sets": 3,
+          "reps": "12-15",
+          "rpe": "7",
+          "rest_seconds": 60,
+          "notes": "SYNERGIST — SERRATUS ANTERIOR. The serratus is what gives you that ribbed, segmented look under the armpit when lean. It is completely absent from the programme otherwise. Cable version: set cable to face height, grip rope with both hands, arms straight, protract the scapulae forward (push shoulder blades apart and forward around the ribcage). No cable: do serratus push-ups — at the top of a push-up, push your upper back toward the ceiling by protracting the scapulae. Hold 1 second. This is a small muscle — use light load and feel the contraction, not the weight.",
+          "form_cues": [
+            "Cable version: stand facing the cable, arms at chest height, straight. Push scapulae forward and apart — like you are trying to hug a large tree.",
+            "Serratus push-up: at the top of a push-up, push your thoracic spine toward the ceiling, separating the shoulder blades wide.",
+            "The movement is small — do not compensate with trunk flexion.",
+            "Feel the muscle contracting along the ribcage below your armpit.",
+            "Light weight, full protraction. RPE should be moderate — this is not a heavy movement."
+          ]
+        }
+      ]
+    },
+
+    "pull_a": {
+      "label": "Day 2 — Pull A (Heavy)",
+      "focus": "Strength — vertical and horizontal pull, pull-up priority + lower trap activation",
+      "estimated_duration_minutes": 70,
+      "rep_range": "5-8",
+      "rest_between_sets_seconds": "120-180",
+      "post_workout_cardio": {
+        "type": "cardio",
+        "exercise": "Incline treadmill walk",
+        "duration_minutes": 12,
+        "intensity": "Incline 10-12%, speed 5.5-6 km/h",
+        "notes": "Same protocol as Push A. Keep it consistent."
+      },
+      "exercises": [
+        {
+          "name": "Scapular Pull-Up (Dead Hang Scapular Depression)",
+          "type": "bodyweight",
+          "sets": 3,
+          "reps": "8",
+          "rpe": "6",
+          "rest_seconds": 60,
+          "notes": "SYNERGIST — LOWER TRAPS + PULL-UP PRIMER. Do this before assisted pull-ups as a warm-up and lower trap activator. Hang from the pull-up bar with a dead hang. Without bending the elbows, depress and retract your scapulae — your body will rise 3-5cm purely from shoulder blade movement. Lower back to dead hang. That is one rep. This directly trains lower trap function, which is the missing link in your pull-up progression, and it doubles as an active primer for the nervous system before the heavy sets. This is also the key to keeping your scapulae packed during pull-ups. Two birds. Do not skip.",
+          "form_cues": [
+            "Start in a full dead hang — arms straight, shoulders at ears.",
+            "Without bending elbows, pull shoulder blades down and back.",
+            "You will rise slightly — that is correct.",
+            "Hold the top for 1 second, feeling the lower traps engage.",
+            "Lower back to full dead hang — shoulders rise to ears again.",
+            "8 reps, controlled. This should not be exhausting."
+          ]
+        },
+        {
+          "name": "Assisted Pull-Up (Machine or Band)",
+          "type": "weight",
+          "sets": 4,
+          "reps": "5-6",
+          "rpe": "8-9",
+          "rest_seconds": 180,
+          "notes": "Highest priority exercise in the programme. Reduce assistance weight by 2.5-5kg every 2 weeks. Log assistance weight every session. Target: 1-3 unassisted reps by week 8.",
+          "progression": "Reduce assistance by 2.5kg when 4x6 feels like RPE 7 or less.",
+          "form_cues": [
+            "Dead hang start — full arm extension at the bottom.",
+            "Depress and retract scapulae before pulling.",
+            "Pull elbows down and back — imagine bending the bar.",
+            "Chin clearly above bar at the top.",
+            "Controlled descent — 3 seconds down."
+          ]
+        },
+        {
+          "name": "Barbell Bent-Over Row",
+          "type": "weight",
+          "sets": 4,
+          "reps": "6-8",
+          "rpe": "8",
+          "rest_seconds": 150,
+          "notes": "Main horizontal pull. Overhand grip for upper back emphasis. Do not sacrifice hip position to lift heavier.",
+          "progression": "2.5-5kg increment when 4x8 achieved cleanly.",
+          "form_cues": [
+            "Hip hinge to ~45 degrees — back stays neutral, not rounded.",
+            "Bar rows to lower chest/upper abdomen.",
+            "Squeeze shoulder blades together at the top.",
+            "Elbows travel close to the body, not flared wide."
+          ]
+        },
+        {
+          "name": "Chest-Supported Dumbbell Row",
+          "type": "weight",
+          "sets": 3,
+          "reps": "8-10",
+          "rpe": "8",
+          "rest_seconds": 120,
+          "notes": "Eliminates lower back fatigue from rows. Allows full focus on lat and rhomboid contraction.",
+          "form_cues": [
+            "Set incline bench to 30-45 degrees, lie face down.",
+            "Row dumbbells toward hips, not toward shoulders.",
+            "Pause at the top for 1 second.",
+            "Full arm extension at the bottom."
+          ]
+        },
+        {
+          "name": "Cable Straight-Arm Pulldown",
+          "type": "weight",
+          "sets": 3,
+          "reps": "10-12",
+          "rpe": "8",
+          "rest_seconds": 90,
+          "notes": "Direct lat isolation. Builds the width that gives the V-taper. Do this with straight arms — it is not a row.",
+          "form_cues": [
+            "Stand back from the cable, slight forward lean.",
+            "Arms straight with soft elbow bend throughout.",
+            "Drive the bar down and into your thighs using your lats.",
+            "Squeeze at the bottom for 1 second."
+          ]
+        },
+        {
+          "name": "Barbell or EZ Bar Curl",
+          "type": "weight",
+          "sets": 3,
+          "reps": "6-8",
+          "rpe": "8",
+          "rest_seconds": 90,
+          "notes": "Heavy curl to complement strength day. Builds bicep peak over time.",
+          "form_cues": [
+            "Upper arms pinned to sides throughout.",
+            "Do not swing — if you are swinging, reduce the weight.",
+            "Full supination at the top.",
+            "Controlled 3-second eccentric."
+          ]
+        }
+      ]
+    },
+
+    "legs_core": {
+      "label": "Day 3 — Legs + Core",
+      "focus": "Lower body strength and hypertrophy — calf priority baked in",
+      "estimated_duration_minutes": 75,
+      "rep_range": "5-15 depending on exercise",
+      "rest_between_sets_seconds": "90-180",
+      "post_workout_cardio": null,
+      "notes": "No post-workout cardio on leg days — legs are demanding enough. Calf work is non-negotiable: 9 working sets every session.",
+      "exercises": [
+        {
+          "name": "Barbell Back Squat",
+          "type": "weight",
+          "sets": 4,
+          "reps": "5-6",
+          "rpe": "8",
+          "rest_seconds": 180,
+          "notes": "Primary lower body strength lift. Current benchmark: 90kg x6. Target 90kg x8 or 95kg x6 by week 8.",
+          "progression": "Add 2.5kg when 4x6 is achieved at RPE 8 or less.",
+          "form_cues": [
+            "Bar position: high bar (on traps) for more quad emphasis.",
+            "Stance: shoulder-width, toes out ~30 degrees.",
+            "Break at hips and knees simultaneously.",
+            "Knees track over toes throughout the movement.",
+            "Hit parallel or below — depth is non-negotiable.",
+            "Brace core hard on the descent and drive through mid-foot on the ascent."
+          ]
+        },
+        {
+          "name": "Romanian Deadlift (RDL)",
+          "type": "weight",
+          "sets": 3,
+          "reps": "8-10",
+          "rpe": "8",
+          "rest_seconds": 150,
+          "notes": "Hamstring and glute emphasis. Also builds lower back resilience. Keep the weight honest — this is not a competition lift.",
+          "progression": "5kg increment when 3x10 achieved at RPE 8 or less.",
+          "form_cues": [
+            "Start standing with bar at hip crease.",
+            "Hinge at hips, pushing them back — not a squat.",
+            "Bar stays in contact with legs the whole way down.",
+            "Stop when you feel a strong hamstring stretch (typically just below the knee).",
+            "Drive hips forward to return to standing."
+          ]
+        },
+        {
+          "name": "Leg Press",
+          "type": "weight",
+          "sets": 3,
+          "reps": "10-12",
+          "rpe": "8",
+          "rest_seconds": 120,
+          "notes": "Volume accumulation for quads without the spinal load of squats. Good for building size.",
+          "form_cues": [
+            "Feet shoulder-width, mid-platform.",
+            "Lower until knees reach ~90 degrees.",
+            "Do not let lower back peel off the pad.",
+            "Press through full extension but do not lock out aggressively."
+          ]
+        },
+        {
+          "name": "Walking Dumbbell Lunge",
+          "type": "weight",
+          "sets": 3,
+          "reps": "10 each leg",
+          "rpe": "8",
+          "rest_seconds": 90,
+          "notes": "Unilateral work fixes imbalances and hits glutes hard. Use a weight that challenges you at rep 8.",
+          "form_cues": [
+            "Step long enough that front knee stays over ankle, not past toes.",
+            "Lower back knee to 1-2cm off the floor.",
+            "Torso upright — do not lean forward.",
+            "Drive through front heel to stand."
+          ]
+        },
+        {
+          "name": "Standing Calf Raise (Machine or Smith)",
+          "type": "weight",
+          "sets": 4,
+          "reps": "12-15",
+          "rpe": "9",
+          "rest_seconds": 60,
+          "notes": "Calf priority block — set 1 of 3 exercises (9 total working sets). Calves respond to high volume and full range of motion. These must go to near-failure.",
+          "form_cues": [
+            "Full dorsiflexion at the bottom — heel drops below the platform.",
+            "Pause 1 second at the bottom stretch.",
+            "Rise to full plantarflexion — all the way up.",
+            "Pause 1 second at the top and squeeze.",
+            "Slow and controlled — do not bounce."
+          ]
+        },
+        {
+          "name": "Seated Calf Raise (Machine)",
+          "type": "weight",
+          "sets": 3,
+          "reps": "15-20",
+          "rpe": "9",
+          "rest_seconds": 60,
+          "notes": "Calf priority block — set 2 of 3. Seated position emphasises soleus (the muscle beneath the gastrocnemius). Critical for calf thickness.",
+          "form_cues": [
+            "Same full range of motion as standing raises.",
+            "Slow 3-second eccentric.",
+            "Do not use momentum — squeeze every rep."
+          ]
+        },
+        {
+          "name": "Donkey Calf Raise or Leg Press Calf Press",
+          "type": "weight",
+          "sets": 2,
+          "reps": "20-25",
+          "rpe": "9",
+          "rest_seconds": 60,
+          "notes": "Calf priority block — set 3 of 3. High-rep burnout. Use leg press if donkey raise unavailable — place toes on the platform edge, push through full range. Push to failure on the last set.",
+          "form_cues": [
+            "Same cues as above.",
+            "These are burnout sets — last set to absolute failure.",
+            "Total calf sets this session: 9. This is intentional."
+          ]
+        },
+        {
+          "name": "Plank",
+          "type": "timed",
+          "sets": 3,
+          "duration_seconds": 45,
+          "rpe": "8",
+          "rest_seconds": 45,
+          "notes": "Core stability, not just aesthetics. Builds the foundation for all compound lifts.",
+          "form_cues": [
+            "Body in a straight line from head to heels.",
+            "Brace like you are about to take a punch.",
+            "Do not let hips sag or pike up.",
+            "Breathe — do not hold your breath."
+          ]
+        },
+        {
+          "name": "Dead Bug",
+          "type": "bodyweight",
+          "sets": 3,
+          "reps": "8 each side",
+          "rpe": "7",
+          "rest_seconds": 45,
+          "notes": "Anti-extension core work. Excellent for lower abdominal control — directly relevant to your target area.",
+          "form_cues": [
+            "Lower back pressed into the floor at all times.",
+            "Extend opposite arm and leg simultaneously, slowly.",
+            "Do not let lower back arch — that is the whole point.",
+            "Move slowly: 3 seconds out, 3 seconds back."
+          ]
+        },
+        {
+          "name": "Hanging Leg Raise or Knee Raise",
+          "type": "bodyweight",
+          "sets": 3,
+          "reps": "8-12",
+          "rpe": "8",
+          "rest_seconds": 60,
+          "notes": "Lower abdominal emphasis. Use knee raises if full leg raises are too difficult. Progress to straight legs over the 8 weeks.",
+          "form_cues": [
+            "Hang from bar, full dead hang.",
+            "Initiate with posterior pelvic tilt (tuck tailbone) — not hip flexors.",
+            "Raise knees or legs to 90 degrees or above.",
+            "Lower slowly — do not let legs swing."
+          ]
+        }
+      ]
+    },
+
+    "cardio_day": {
+      "label": "Day 4 — Cardio (Intervals + Steady State + Core)",
+      "focus": "Aerobic base building, fat oxidation, calorie burn",
+      "estimated_duration_minutes": 55,
+      "post_workout_cardio": null,
+      "notes": "This day is a priority for your cardio capacity goal. The interval block builds VO2max; the steady state block builds fat-burning efficiency. Do not skip this.",
+      "structure": {
+        "warm_up": {
+          "duration_minutes": 5,
+          "description": "Easy walk or light jog. Get the heart rate to 100-110 bpm before starting intervals."
+        },
+        "block_1_intervals": {
+          "duration_minutes": 20,
+          "outdoor_option": {
+            "exercise": "Running intervals",
+            "type": "cardio",
+            "protocol": "Run 60 seconds at 80% effort (fast but not sprinting), walk 90 seconds. Repeat 8 times.",
+            "weekly_progression": "Week 1-2: 8 rounds. Week 3-4: 9 rounds. Week 5-6: 10 rounds. Week 7 (deload): 6 rounds. Week 8: 10-12 rounds."
+          },
+          "gym_option": {
+            "exercise": "Treadmill or Rowing Machine intervals",
+            "type": "cardio",
+            "protocol": "Treadmill: increase speed to 10-12 km/h for 60 seconds, drop to 6 km/h for 90 seconds. Rower: 60 sec hard (stroke rate 28+), 90 sec easy. Repeat 8 times.",
+            "notes": "Rower is preferred gym option — full body and very effective for cardio capacity."
+          }
+        },
+        "block_2_steady_state": {
+          "duration_minutes": 20,
+          "outdoor_option": {
+            "exercise": "Easy jog or brisk walk",
+            "type": "cardio",
+            "intensity": "Heart rate 120-140 bpm. You should be able to hold a conversation.",
+            "notes": "This is Zone 2 cardio — the fat-burning zone. Do not push harder. Boring is the point."
+          },
+          "gym_option": {
+            "exercise": "Stationary bike or elliptical",
+            "type": "cardio",
+            "intensity": "Moderate resistance, 120-140 bpm, 20 minutes continuous.",
+            "notes": "Bike is easier on the joints than treadmill after intervals."
+          }
+        },
+        "block_3_core_circuit": {
+          "duration_minutes": 10,
+          "notes": "3 rounds of the following circuit with 30 seconds rest between rounds. No rest between exercises within a round.",
+          "exercises": [
+            {
+              "name": "Mountain Climbers",
+              "type": "timed",
+              "duration_seconds": 30,
+              "notes": "Fast pace. Keep hips level."
+            },
+            {
+              "name": "Reverse Crunch",
+              "type": "bodyweight",
+              "reps": 15,
+              "notes": "Curl the pelvis up — not a hip flexor exercise. Lower back stays in contact with the ground on the way down."
+            },
+            {
+              "name": "Side Plank",
+              "type": "timed",
+              "duration_seconds": 20,
+              "notes": "Each side. Stack feet or stagger them for balance."
+            },
+            {
+              "name": "Hollow Body Hold",
+              "type": "timed",
+              "duration_seconds": 20,
+              "notes": "Lower back pressed to floor, arms and legs extended low. If it breaks, bend the knees."
+            }
+          ]
+        },
+        "cool_down": {
+          "duration_minutes": 5,
+          "description": "Walk and light stretching. Hip flexors, hamstrings, calves."
+        }
+      }
+    },
+
+    "push_b": {
+      "label": "Day 5 — Push B (Pump / Supersets)",
+      "focus": "Metabolic stress, muscle fullness, volume accumulation",
+      "estimated_duration_minutes": 60,
+      "rep_range": "10-20",
+      "rest_between_sets_seconds": "30-60 within supersets, 60-90 between superset pairs",
+      "post_workout_cardio": null,
+      "notes": "Less weight, more tension, more burn. Supersets keep the heart rate elevated and add a metabolic conditioning element that supports fat loss. Superset pairs are labelled A1/A2, B1/B2 etc.",
+      "exercises": [
+        {
+          "name": "Machine Chest Press",
+          "type": "weight",
+          "superset_group": "A1",
+          "sets": 3,
+          "reps": "12-15",
+          "rpe": "8-9",
+          "rest_seconds": 30,
+          "notes": "First in superset with cable fly. Machine allows safe failure without a spotter.",
+          "form_cues": [
+            "Seat height: handles at mid-chest level.",
+            "Do not let shoulders shrug — keep them packed down.",
+            "Squeeze at full extension."
+          ]
+        },
+        {
+          "name": "Cable Chest Fly (Low Cable)",
+          "type": "weight",
+          "superset_group": "A2",
+          "sets": 3,
+          "reps": "15-20",
+          "rpe": "9",
+          "rest_seconds": 75,
+          "notes": "Immediately after machine press. Low cable angle emphasises upper chest and keeps tension through full range of motion.",
+          "form_cues": [
+            "Arms slightly bent throughout — this is not a press.",
+            "Wide arc, bring hands together in front of face or above.",
+            "Feel the stretch in the pec at the bottom.",
+            "Do not let the weight drag arms back too far."
+          ]
+        },
+        {
+          "name": "Dumbbell Lateral Raise",
+          "type": "weight",
+          "superset_group": "B1",
+          "sets": 4,
+          "reps": "15",
+          "rpe": "9",
+          "rest_seconds": 15,
+          "notes": "First in the lateral raise drop-set. Start at working weight.",
+          "form_cues": [
+            "Same cues as Push A.",
+            "Do not cheat the reps — this is pump work, not ego work."
+          ]
+        },
+        {
+          "name": "Dumbbell Lateral Raise (Drop Set)",
+          "type": "weight",
+          "superset_group": "B2",
+          "sets": 4,
+          "reps": "15",
+          "rpe": "10",
+          "rest_seconds": 75,
+          "notes": "Immediately drop 2-4kg and do 15 more reps. Rest 75 sec then repeat. This is where medial delt growth happens.",
+          "form_cues": [
+            "Same form — resist the urge to swing when fatigued.",
+            "This is where the growth happens. Embrace the burn."
+          ]
+        },
+        {
+          "name": "Incline Dumbbell Fly",
+          "type": "weight",
+          "superset_group": "C1",
+          "sets": 3,
+          "reps": "12-15",
+          "rpe": "9",
+          "rest_seconds": 30,
+          "notes": "Upper chest pump. Paired with tricep pushdown.",
+          "form_cues": [
+            "Bench at 30-35 degrees.",
+            "Wide arc, elbows soft.",
+            "Strong stretch at the bottom, controlled squeeze at the top."
+          ]
+        },
+        {
+          "name": "Cable Tricep Pushdown (Rope or Bar)",
+          "type": "weight",
+          "superset_group": "C2",
+          "sets": 3,
+          "reps": "15-20",
+          "rpe": "9",
+          "rest_seconds": 75,
+          "notes": "Immediately after incline fly. Rope attachment: spread the rope at the bottom for extra contraction.",
+          "form_cues": [
+            "Elbows locked at sides — do not let them drift forward.",
+            "Full extension at the bottom.",
+            "Do not lean into the cable for assistance."
+          ]
+        },
+        {
+          "name": "Bodyweight Dips (or Assisted) — with Serratus Lockout Hold",
+          "type": "bodyweight",
+          "superset_group": "D1",
+          "sets": 3,
+          "reps": "10-15",
+          "rpe": "9",
+          "rest_seconds": 30,
+          "notes": "Paired with overhead tricep extension. Use assistance if needed. Slight forward lean for chest emphasis. SYNERGIST ADDITION: at lockout (top of each rep), actively push your shoulder blades apart and forward (protract) and hold for 1 second before lowering. This activates the serratus anterior under load with zero added time. Over 8 weeks, this builds the serratus detail without a dedicated extra set.",
+          "form_cues": [
+            "Slight forward lean for chest emphasis, upright for tricep.",
+            "Lower until shoulders are below elbows.",
+            "At lockout: push body up an extra centimetre by protracting the scapulae — shoulder blades spread wide and wrap around the ribcage.",
+            "Hold that protraction for 1 second, then lower.",
+            "Do not lockout explosively — control at the top."
+          ]
+        },
+        {
+          "name": "Overhead Cable Tricep Extension",
+          "type": "weight",
+          "superset_group": "D2",
+          "sets": 3,
+          "reps": "15",
+          "rpe": "9",
+          "rest_seconds": 75,
+          "notes": "Immediately after dips. Face away from cable, rope overhead. Long-head stretch emphasis.",
+          "form_cues": [
+            "Same cues as Push A overhead extension.",
+            "Lean slightly forward for balance.",
+            "Elbows stay high and pointed at the ceiling."
+          ]
+        }
+      ]
+    },
+
+    "pull_b": {
+      "label": "Day 6 — Pull B (Pump / Supersets)",
+      "focus": "Back thickness, rear delt, arm pump — metabolic stress + brachioradialis/forearms",
+      "estimated_duration_minutes": 65,
+      "rep_range": "10-20",
+      "rest_between_sets_seconds": "30-60 within supersets, 60-90 between superset pairs",
+      "post_workout_cardio": null,
+      "notes": "The B sessions are your high-rep, high-volume hypertrophy stimulus. Paired correctly, they also keep heart rate elevated. This is where aesthetic muscle detail is built.",
+      "exercises": [
+        {
+          "name": "Lat Pulldown (Wide Grip)",
+          "type": "weight",
+          "superset_group": "A1",
+          "sets": 4,
+          "reps": "12-15",
+          "rpe": "9",
+          "rest_seconds": 30,
+          "notes": "First in superset with straight-arm pulldown. Prioritises lat width.",
+          "form_cues": [
+            "Slight backward lean (10-15 degrees) — not excessive.",
+            "Pull to upper chest, elbows drive down and back.",
+            "Full stretch at the top — let the lats elongate.",
+            "Do not use momentum."
+          ]
+        },
+        {
+          "name": "Cable Straight-Arm Pulldown",
+          "type": "weight",
+          "superset_group": "A2",
+          "sets": 4,
+          "reps": "15-20",
+          "rpe": "9",
+          "rest_seconds": 75,
+          "notes": "Immediately after pulldown. Continuous lat tension through a different movement pattern.",
+          "form_cues": [
+            "Same cues as Pull A.",
+            "The fatigue from pulldowns will make this harder — reduce weight accordingly."
+          ]
+        },
+        {
+          "name": "Seated Cable Row (Close Grip)",
+          "type": "weight",
+          "superset_group": "B1",
+          "sets": 3,
+          "reps": "12-15",
+          "rpe": "9",
+          "rest_seconds": 30,
+          "notes": "Paired with face pull. Close grip emphasises mid-back and lower traps.",
+          "form_cues": [
+            "Sit tall, slight forward lean at the catch, pull to navel.",
+            "Row elbows past your torso — squeeze shoulder blades.",
+            "Do not round the back to get extra range.",
+            "Controlled return — feel the stretch."
+          ]
+        },
+        {
+          "name": "Face Pull (Cable, Rope)",
+          "type": "weight",
+          "superset_group": "B2",
+          "sets": 3,
+          "reps": "15-20",
+          "rpe": "8",
+          "rest_seconds": 75,
+          "notes": "Rear delt and external rotator work. Critical for shoulder health and posture — long-term injury prevention. Do not skip this.",
+          "form_cues": [
+            "Cable at or slightly above face height.",
+            "Pull rope to face, hands level with ears, elbows high.",
+            "External rotate at the end — think double bicep pose.",
+            "Light weight, full contraction. This is not a strength exercise."
+          ]
+        },
+        {
+          "name": "Dumbbell Hammer Curl",
+          "type": "weight",
+          "superset_group": "C1",
+          "sets": 3,
+          "reps": "12",
+          "rpe": "9",
+          "rest_seconds": 20,
+          "notes": "Paired with incline dumbbell curl. Hammer grip hits brachialis — adds thickness under the bicep.",
+          "form_cues": [
+            "Neutral grip (thumbs up) throughout.",
+            "Upper arm stationary.",
+            "Curl to full flexion — bicep against forearm."
+          ]
+        },
+        {
+          "name": "Incline Dumbbell Curl",
+          "type": "weight",
+          "superset_group": "C2",
+          "sets": 3,
+          "reps": "12",
+          "rpe": "9",
+          "rest_seconds": 20,
+          "notes": "Incline position stretches the long head of the bicep — produces a better peak over time.",
+          "form_cues": [
+            "Bench at 45-60 degrees, lie back.",
+            "Arms hang behind the body at the start.",
+            "Do not let elbows drift forward — they stay behind the torso.",
+            "Full supination at the top."
+          ]
+        },
+        {
+          "name": "Reverse Curl (EZ Bar or Dumbbell)",
+          "type": "weight",
+          "superset_group": "C3",
+          "sets": 3,
+          "reps": "12-15",
+          "rpe": "8",
+          "rest_seconds": 20,
+          "notes": "SYNERGIST — BRACHIORADIALIS + FOREARMS. Overhand (pronated) grip curl. This directly targets the brachioradialis, which is the thick muscle on the outside of the forearm that fills in the arm from the side view. Combined with hammer curls (brachialis) and supinated curls (bicep peak), this gives you complete arm development — thickness from every angle. This is the most overlooked arm exercise for aesthetics. Use EZ bar if wrists are uncomfortable with a straight bar. Light weight — ego kills form here.",
+          "form_cues": [
+            "Overhand grip — knuckles face the ceiling at the top.",
+            "Upper arms pinned to sides — do not let elbows drift forward.",
+            "Full extension at the bottom, curl to 90 degrees (wrist won't fully supinate).",
+            "Slow 3-second eccentric — the brachioradialis is an eccentric-dominant muscle.",
+            "If wrists ache, use EZ bar or dumbbell with slight neutral tilt."
+          ]
+        },
+        {
+          "name": "Concentration Curl (or Cable Curl)",
+          "type": "weight",
+          "superset_group": "C4",
+          "sets": 3,
+          "reps": "15",
+          "rpe": "10",
+          "rest_seconds": 75,
+          "notes": "Fourth in the curl cluster. Finisher — go to failure. Last exercise in this superset group.",
+          "form_cues": [
+            "Elbow braced against inner thigh.",
+            "Full extension at the bottom, full contraction at the top.",
+            "Squeeze hard at the top for 1 second."
+          ]
+        },
+        {
+          "name": "Rear Delt Fly (Dumbbell, Bent Over)",
+          "type": "weight",
+          "superset_group": "D1",
+          "sets": 3,
+          "reps": "15-20",
+          "rpe": "9",
+          "rest_seconds": 30,
+          "notes": "Rear delt finisher, paired with band pull-apart. Use light weight — these are small muscles.",
+          "form_cues": [
+            "Hinge at hips 45-90 degrees.",
+            "Arms slightly bent, raise out to the sides.",
+            "Lead with elbows, not hands.",
+            "Squeeze at the top."
+          ]
+        },
+        {
+          "name": "Band Pull-Apart (or Low Cable Rear Delt Fly)",
+          "type": "bodyweight",
+          "superset_group": "D2",
+          "sets": 3,
+          "reps": "20",
+          "rpe": "8",
+          "rest_seconds": 60,
+          "notes": "Posterior shoulder finisher. If no band, use light cable or do extra face pulls.",
+          "form_cues": [
+            "Band at chest height, arms straight.",
+            "Pull apart until band touches chest.",
+            "Control the return.",
+            "High reps, full contraction each rep."
+          ]
+        }
+      ]
+    },
+
+    "day_7": {
+      "label": "Day 7 — Rest or Light Active Recovery",
+      "estimated_duration_minutes": 30,
+      "options": [
+        {
+          "option": "Full Rest",
+          "notes": "Prioritise sleep. Aim for 8 hours. Recomp is made during recovery, not just training."
+        },
+        {
+          "option": "Light Cardio",
+          "type": "cardio",
+          "exercise": "Easy walk (outdoors preferred)",
+          "duration_minutes": 30,
+          "intensity": "Conversational pace. Heart rate under 120 bpm. Not a workout — active recovery.",
+          "notes": "Helps with blood flow and recovery without adding meaningful stress to the system."
+        },
+        {
+          "option": "Mobility and Stretching",
+          "type": "timed",
+          "duration_minutes": 20,
+          "notes": "Hip flexors, thoracic spine, hamstrings, calves. Especially relevant given calf weakness and squat development."
+        }
+      ]
+    }
+  },
+
+  "progression_scheme": {
+    "weeks_1_2": {
+      "label": "Foundation and Calibration",
+      "notes": "Re-establish movement patterns. Weights should feel moderate — RPE 7 max. Prioritise form over load. Do not push to failure.",
+      "volume_modifier": "As written"
+    },
+    "weeks_3_4": {
+      "label": "Accumulation I",
+      "notes": "Begin pushing RPE to 8. Apply progressive overload on main compound lifts. Add 2.5kg to bench and OHP when 4x6 is achieved.",
+      "volume_modifier": "As written"
+    },
+    "weeks_5_6": {
+      "label": "Accumulation II",
+      "notes": "Highest volume and intensity phase. Compound lifts should be approaching previous PRs. Pull-up assistance continues to reduce. Cardio intervals increase by 1-2 rounds.",
+      "volume_modifier": "Add 1 set to main compound lifts if recovery allows"
+    },
+    "week_7": {
+      "label": "Deload — Mandatory",
+      "notes": "Reduce all weights by 40-50%. Reduce sets to 2-3 per exercise. No supersets — straight sets only. Do not skip this. The deload allows your nervous system and tendons to recover, and you will come back stronger in week 8.",
+      "volume_modifier": "50% volume reduction. 50% load reduction."
+    },
+    "week_8": {
+      "label": "Peak and Test Week",
+      "notes": "Attempt benchmark tests. Bench: go for 87.5kg. Squat: go for 90kg x8 or 95kg x6. Pull-ups: attempt unassisted. Cardio: 45 min steady state. Record all results for the next programme cycle."
+    }
+  },
+
+  "key_lift_progression_notes": {
+    "bench_press": {
+      "starting_weight_kg": 90,
+      "current_pr": "90kg x8 (2026-03-23)",
+      "progression": "2.5kg increment when top of rep range achieved across all sets. Lock weight first, then chase reps, then move up.",
+      "week_8_target_kg": "97.5",
+      "stretch_target": "100kg by week 10-12",
+      "notes": "Already at pre-break PR. No rebuild needed. Push forward. Wk1: 90x6-8, Wk2-3: 92.5, Wk4-5: 95, Wk6: 97.5, Wk7: deload 80, Wk8: 97.5x7-8."
+    },
+    "overhead_press": {
+      "progression": "2.5kg increment when 4x6 achieved at RPE 8 or less",
+      "notes": "OHP stalls often. If stuck, add a 5th set at the same weight before increasing load."
+    },
+    "squat": {
+      "starting_weight_kg": 90,
+      "starting_reps": 6,
+      "progression": "2.5kg increment when 4x6-8 at RPE 8 or less. Wk1: 90, Wk2-3: 92.5, Wk4-5: 95, Wk6: 97.5, Wk7: deload, Wk8: 97.5x7-8.",
+      "week_8_target": "97.5kg x7-8"
+    },
+    "assisted_pull_up": {
+      "starting_assistance": "Log your current assistance weight on day 1 of the programme.",
+      "progression": "Reduce assistance by 2.5kg every 2 weeks when 4x6 feels manageable (RPE 7 or less)",
+      "week_8_target": "1-3 unassisted reps",
+      "notes": "This is the most important long-term lift in the programme. Pull-up strength directly underpins lat width and V-taper — your primary aesthetic goal."
+    },
+    "rdl": {
+      "progression": "5kg increment when 3x10 achieved at RPE 8 or less"
+    }
+  },
+
+  "tracking": {
+    "weekly_log_fields": [
+      "Date",
+      "Session completed (Y/N)",
+      "Main lift weights and reps achieved",
+      "Body weight (same time each week — morning, after bathroom, before eating)",
+      "Subjective energy level (1-10)",
+      "Sleep hours previous night",
+      "Soreness level (1-10)",
+      "Notes (anything notable)"
+    ],
+    "photo_schedule": "Take photos every 2 weeks, same lighting, same time of day, same poses: front, side, back. Do not compare daily — compare month over month.",
+    "measurement_schedule": "Waist measurement at navel every 2 weeks. This is a better fat loss indicator than scale weight."
+  },
+
+  "recovery_guidelines": {
+    "sleep": "8 hours is the target. This is non-negotiable for recomp — muscle is built and fat is mobilised during sleep.",
+    "hydration": "3-4 litres of water per day. More on training days.",
+    "protein_synthesis_note": "Muscle protein synthesis peaks roughly 24-48 hours post-training. Consecutive days of the same muscle group without adequate protein will impair recovery.",
+    "signs_of_overtraining": [
+      "Persistent fatigue that does not improve with rest",
+      "Strength regression across multiple sessions",
+      "Mood changes, irritability, or lack of motivation",
+      "Frequent illness or slow recovery from illness",
+      "Sleep disturbance despite feeling tired"
+    ],
+    "response_to_overtraining_signs": "If 3 or more signs are present, insert an additional rest day and reduce volume by 30% for the following week. Report to your coach."
+  },
+
+  "programme_metadata": {
+    "created": "2026-03-25",
+    "version": "1.0 — Option C PPL A/B",
+    "next_review_date": "2026-05-20",
+    "coach_notes": "Programme designed for a 24-year-old intermediate-beginner at 182cm/81kg targeting recomposition with aesthetic priority. The A/B structure provides strength stimulus (A days) and hypertrophy/metabolic stimulus (B days). Calf volume is deliberately elevated (9 working sets on leg day) to address a stated weak point. Pull-up progression is the single most important long-term tracking metric. Do not suggest programme changes before the 8-week review unless there is injury or significant life disruption."
+  }
+}
