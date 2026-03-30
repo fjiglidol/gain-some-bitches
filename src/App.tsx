@@ -38,6 +38,7 @@ import { twMerge } from 'tailwind-merge';
 import { format } from 'date-fns';
 import programmeData from './data/programme.json';
 import { Programme, Session, Exercise, SetEntry, SessionProgress } from './types';
+import { WavyGlassSVG } from './animations';
 import {
   evaluateSession,
   getRecommendedWeights,
@@ -502,6 +503,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen font-sans selection:bg-violet-500/30 selection:text-white relative">
+      <WavyGlassSVG />
       <div className="app-bg" />
 
       <div className="relative z-10">
@@ -526,7 +528,7 @@ export default function App() {
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => startSession(key)}
-                  className="group relative flex flex-col items-start p-5 glass rounded-2xl hover:bg-white/12 transition-all text-left overflow-hidden"
+                  className="group relative flex flex-col items-start p-5 glass glass-wavy rounded-2xl hover:bg-white/12 transition-all text-left overflow-hidden"
                 >
                   <div className="absolute top-0 right-0 p-5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <ArrowRight className="w-5 h-5 text-violet-400" />
@@ -559,7 +561,7 @@ export default function App() {
             >
               <button
                 onClick={() => setHistoryOpen(!historyOpen)}
-                className="w-full flex flex-col items-start p-5 glass-pink rounded-2xl hover:bg-pink-500/15 transition-all text-left overflow-hidden"
+                className="w-full flex flex-col items-start p-5 glass-pink glass-wavy rounded-2xl hover:bg-pink-500/15 transition-all text-left overflow-hidden"
               >
                 <div className="w-full flex items-center justify-between mb-1.5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-pink-400">Past Workouts</span>
@@ -896,7 +898,7 @@ function ExerciseCard({
     <motion.div
       layout
       className={cn(
-        "glass rounded-3xl transition-all overflow-hidden",
+        "glass glass-wavy rounded-3xl transition-all overflow-hidden",
         isSkipped ? "opacity-50" : isComplete ? "border-emerald-500/30" : ""
       )}
     >
@@ -1039,7 +1041,7 @@ function ExerciseCard({
 
 function HistoryCard({ session, ...rest }: { session: { date: string; sessionType: string; exercises: { exercise: string; weight: string; sets: string; reps: string; notes: string }[] }; [key: string]: any }) {
   return (
-    <div className="glass-pink rounded-2xl overflow-hidden">
+    <div className="glass-pink glass-wavy rounded-2xl overflow-hidden">
       <div className="p-4 flex items-center justify-between text-left">
         <div>
           <div className="flex items-center gap-2 mb-0.5">
@@ -1159,7 +1161,7 @@ function FeedbackScreen({
         <h1 className="text-3xl font-extrabold text-white">How was that?</h1>
       </header>
 
-      <div className="glass rounded-3xl p-6 mb-4">
+      <div className="glass glass-wavy rounded-3xl p-6 mb-4">
         <ScorePicker
           label="Body Soreness going in"
           icon={<Activity className="w-4 h-4" />}
@@ -1209,7 +1211,7 @@ function FeedbackScreen({
         </div>
       </div>
 
-      <div className="glass rounded-3xl p-4 mb-6">
+      <div className="glass glass-wavy rounded-3xl p-4 mb-6">
         <textarea
           value={notes}
           onChange={e => setNotes(e.target.value)}
@@ -1319,7 +1321,7 @@ function CoachReviewScreen({
       </header>
 
       {/* Section 1: Overview */}
-      <div className="glass rounded-3xl p-5 mb-4">
+      <div className="glass glass-wavy rounded-3xl p-5 mb-4">
         <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-3">Overview</p>
         <div className="flex items-center justify-between mb-4">
           <div>

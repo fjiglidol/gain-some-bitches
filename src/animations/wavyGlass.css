@@ -1,0 +1,186 @@
+/*
+ * Wavy Cloudy Glass Edge Effect
+ *
+ * Adds an atmospheric, undulating misty border to glass cards.
+ * Uses SVG feTurbulence displacement (defined in WavyGlassSVG component)
+ * combined with CSS pseudo-element layering.
+ *
+ * Usage: add `.glass-wavy` alongside `.glass`, `.glass-pink`, etc.
+ */
+
+/* ─── Keyframes ────────────────────────────────────────────────────────────── */
+
+/*
+ * Slowly shift the gradient angle on the misty border ring so the
+ * "cloud density" feels like it is drifting around the edge.
+ */
+@keyframes wavy-drift {
+  0%   { background-position: 0% 0%;   }
+  25%  { background-position: 100% 0%; }
+  50%  { background-position: 100% 100%; }
+  75%  { background-position: 0% 100%; }
+  100% { background-position: 0% 0%;   }
+}
+
+/*
+ * Soft glow pulse — the inner shadow breathes in and out, simulating
+ * the mist condensing and thinning against the glass.
+ */
+@keyframes wavy-pulse {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.80;
+    transform: scale(1.012);
+  }
+}
+
+/*
+ * Independent horizontal shimmer for the ::after layer —
+ * moves faster than the drift so the two layers feel decoupled
+ * and organic rather than mechanically synchronized.
+ */
+@keyframes wavy-shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+/* ─── Base class ────────────────────────────────────────────────────────────── */
+
+.glass-wavy {
+  position: relative;
+  /* Clip so pseudo-elements don't bleed outside border-radius */
+  isolation: isolate;
+  /* GPU promotion — keeps the blur compositing cheap */
+  will-change: transform;
+}
+
+/* ─── Layer 1: turbulence-displaced misty ring ──────────────────────────────
+ *
+ * This pseudo-element sits *behind* the card content and applies the SVG
+ * displacement filter defined in <WavyGlassSVG>. The displacement warps its
+ * blurred gradient edges, making the border look organically wavy / cloudy.
+ *
+ * The filter is applied to the *pseudo-element*, not the card itself, so
+ * the card interior and backdrop-filter remain crisp and unaffected.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+.glass-wavy::before {
+  content: '';
+  position: absolute;
+  /* Slightly overbleed so the distorted edges are never clipped */
+  inset: -6px;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+
+  /* A soft, multi-stop radial + conic gradient concentrated at the edges.
+     The transparent center keeps the card interior clean. */
+  background:
+    radial-gradient(
+      ellipse at 50% 0%,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(200, 160, 255, 0.10) 30%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 50% 100%,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(236, 72, 153, 0.08) 30%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 0% 50%,
+      rgba(200, 160, 255, 0.12) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 100% 50%,
+      rgba(236, 72, 153, 0.10) 0%,
+      transparent 60%
+    );
+  background-size: 200% 200%;
+
+  /* Heavy blur so the gradient edges are already soft before displacement */
+  filter: blur(8px) url(#glass-wavy-filter);
+
+  animation:
+    wavy-drift   14s ease-in-out infinite,
+    wavy-pulse   8s  ease-in-out infinite;
+
+  will-change: opacity, transform, background-position;
+}
+
+/* ─── Layer 2: travelling shimmer ──────────────────────────────────────────── */
+
+.glass-wavy::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+
+  /* A thin travelling light streak that passes around the border ring */
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.07) 48%,
+    rgba(200, 160, 255, 0.12) 52%,
+    rgba(255, 255, 255, 0.07) 56%,
+    transparent 65%
+  );
+  background-size: 300% 100%;
+
+  filter: blur(4px);
+
+  animation: wavy-shimmer 12s linear infinite;
+
+  will-change: background-position;
+}
+
+/* ─── Variant: pink-tinted wavy (for .glass-pink cards) ────────────────────── */
+
+.glass-pink.glass-wavy::before {
+  background:
+    radial-gradient(
+      ellipse at 50% 0%,
+      rgba(255, 130, 180, 0.22) 0%,
+      rgba(236, 72, 153, 0.12) 30%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 50% 100%,
+      rgba(255, 130, 180, 0.18) 0%,
+      rgba(200, 60, 120, 0.10) 30%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 0% 50%,
+      rgba(236, 72, 153, 0.14) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 100% 50%,
+      rgba(255, 130, 180, 0.14) 0%,
+      transparent 60%
+    );
+  background-size: 200% 200%;
+}
+
+/* ─── Reduced-motion: cut to a static subtle glow ──────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-wavy::before {
+    animation: none;
+    filter: blur(10px);
+    opacity: 0.5;
+  }
+
+  .glass-wavy::after {
+    animation: none;
+    opacity: 0;
+  }
+}
