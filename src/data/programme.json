@@ -313,7 +313,8 @@
             "Break at hips and knees simultaneously.",
             "Knees track over toes throughout the movement.",
             "Hit parallel or below — depth is non-negotiable.",
-            "Brace core hard on the descent and drive through mid-foot on the ascent."
+            "Brace core hard on the descent and drive through mid-foot on the ascent.",
+            "At lockout: squeeze glutes deliberately — do not just stand up passively."
           ]
         },
         {
@@ -334,6 +335,25 @@
           ]
         },
         {
+          "name": "Barbell Hip Thrust",
+          "type": "weight",
+          "sets": 3,
+          "reps": "10-12",
+          "rpe": 8,
+          "rest_seconds": 90,
+          "notes": "Primary glute isolation. Positioned after RDL to complete the posterior chain block before quad-dominant work.",
+          "progression_notes": "Add 5kg when 3x12 achieved at RPE 8 or less.",
+          "form_cues": [
+            "Bench at mid-scapula height — not lower back.",
+            "Bar padded on the hip crease.",
+            "Feet flat, hip-width apart, shins close to vertical at the top.",
+            "Drive through heels.",
+            "At lockout: squeeze glutes hard, posterior pelvic tilt. Do NOT hyperextend the lower back.",
+            "Hold the top for 1 full second on every rep.",
+            "Lower under control."
+          ]
+        },
+        {
           "name": "Leg Press",
           "type": "weight",
           "sets": 3,
@@ -351,7 +371,7 @@
         {
           "name": "Walking Dumbbell Lunge",
           "type": "weight",
-          "sets": 3,
+          "sets": 2,
           "reps": "10 each leg",
           "rpe": "8",
           "rest_seconds": 90,
@@ -856,6 +876,44 @@
           "type": "timed",
           "duration_minutes": 20,
           "notes": "Hip flexors, thoracic spine, hamstrings, calves. Especially relevant given calf weakness and squat development."
+        },
+        {
+          "option": "Bonus Abs Mini-Game (Optional)",
+          "type": "timed",
+          "duration_minutes": 10,
+          "notes": "Fun 10-min EMOM. 5 exercises, 2 rounds. Do reps at the top of each minute, rest the remainder. Scale: 3 rounds if feeling good (15 min), 1 round if flat (5 min), or skip entirely — Friday legs always wins.",
+          "exercises": [
+            {
+              "name": "Dead Bug",
+              "type": "bodyweight",
+              "reps": "8 each side",
+              "notes": "Slow and controlled. Extend opposite arm and leg, keep lower back glued to the floor. Trains the exact bracing pattern you need under the bar."
+            },
+            {
+              "name": "Side-Lying Clam Shell",
+              "type": "bodyweight",
+              "reps": "15 each side",
+              "notes": "Knees bent 90°, feet together, open the top knee. Hits glute medius — stops your knees caving on squats."
+            },
+            {
+              "name": "Suitcase Carry (March in Place)",
+              "type": "bodyweight",
+              "reps": "20 steps each side",
+              "notes": "Hold any weight in one hand, march in place. Stay upright — don't lean. Anti-lateral flexion. The most fun one because you can feel immediately if your core is working."
+            },
+            {
+              "name": "Bird Dog",
+              "type": "bodyweight",
+              "reps": "8 each side",
+              "notes": "Opposite arm and leg extend simultaneously. Pause 1 second at the top. Anti-rotation and spinal stability."
+            },
+            {
+              "name": "Standing Oblique Crunch",
+              "type": "bodyweight",
+              "reps": "12 each side",
+              "notes": "Stand tall, bring elbow to knee on the same side. No spinal compression, feels athletic. Fills the one pattern missing from your whole programme."
+            }
+          ]
         }
       ]
     }

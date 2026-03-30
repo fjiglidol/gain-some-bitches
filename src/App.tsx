@@ -22,13 +22,10 @@ import {
   Calendar,
   Share2,
   Download,
-  Brain,
   TrendingUp,
   TrendingDown,
   Minus,
-  AlertTriangle,
   Moon,
-  Activity,
   CloudUpload
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -45,8 +42,6 @@ import {
   PostSessionFeedback,
   SessionEvaluation,
   CoachingState,
-  FatigueLevel,
-  ExerciseFlag
 } from './coachingEngine';
 
 function cn(...inputs: ClassValue[]) {
@@ -127,7 +122,7 @@ function isRestDay(session: Session): boolean {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<'select' | 'workout' | 'feedback' | 'coach_review' | 'summary'>('select');
+  const [screen, setScreen] = useState<'select' | 'workout' | 'feedback' | 'report'>('select');
   const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null);
   const [setData, setSetData] = useState<{ [exIdx: number]: SetEntry[] }>({});
   const [skipped, setSkipped] = useState<{ [exIdx: number]: boolean }>({});
@@ -362,16 +357,12 @@ export default function App() {
 
     setPendingFeedback(feedback);
 
-    if (feedback) {
-      setScreen('coach_review');
-    } else {
-      // Skipped feedback — go straight to summary
-      await saveToICloud();
-      setScreen('summary');
-    }
+    // Always go to report (handles both feedback and skip paths)
+    await saveToICloud();
+    setScreen('report');
   };
 
-  const handleCoachReviewDone = async (acceptedWeights: Record<string, number>) => {
+  const handleReportDone = (acceptedWeights: Record<string, number>) => {
     // Merge accepted weights into coaching state
     const newAccepted = { ...coachingState.acceptedAdjustments, ...acceptedWeights };
     const newState: CoachingState = {
@@ -380,9 +371,7 @@ export default function App() {
     };
     setCoachingState(newState);
     saveCoachingState(newState);
-
-    await saveToICloud();
-    setScreen('summary');
+    setScreen('select');
   };
 
   const generateCSV = () => {
@@ -846,118 +835,19 @@ export default function App() {
           />
         )}
 
-        {screen === 'coach_review' && currentEvaluation && (
-          <CoachReviewScreen
+        {screen === 'report' && currentSessionKey && (
+          <ReportScreen
+            sessionKey={currentSessionKey}
+            setData={setData}
+            skipped={skipped}
+            elapsed={elapsed}
             evaluation={currentEvaluation}
-            onDone={handleCoachReviewDone}
+            savingStatus={savingStatus}
+            iCloudStatus={iCloudStatus}
+            onICloudSave={handleICloudSave}
+            onShareCSV={shareCSV}
+            onDone={handleReportDone}
           />
-        )}
-
-        {screen === 'summary' && currentSessionKey && (
-          <motion.div
-            key="summary"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-w-2xl mx-auto px-5 py-12"
-          >
-            <div className="text-center mb-12">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full mb-6 border border-emerald-500/30">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <h1 className="text-4xl font-extrabold text-white mb-2">Workout Complete!</h1>
-              <p className="text-white/50 font-medium">Excellent work today.</p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 mb-12">
-              <div className="glass p-5 rounded-2xl text-center">
-                <span className="block text-2xl font-black text-white">{Math.round(elapsed / 60)}</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Minutes</span>
-              </div>
-              <div className="glass p-5 rounded-2xl text-center">
-                <span className="block text-2xl font-black text-white">
-                  {Object.values(setData).flat().filter((s: any) => s.weight !== '' || s.reps !== '').length}
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Sets</span>
-              </div>
-              <div className="glass p-5 rounded-2xl text-center">
-                <span className="block text-2xl font-black text-white">
-                  {getSessionExercises(programme.sessions[currentSessionKey]).filter((_, i) => !skipped[i]).length}
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Exercises</span>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* Auto-save status indicator */}
-              <div className={cn(
-                "w-full flex items-center justify-center gap-3 font-bold py-4 rounded-2xl transition-all",
-                savingStatus === 'saving' && "glass text-white/50",
-                savingStatus === 'saved' && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
-                savingStatus === 'error' && "bg-red-500/15 text-red-400 border border-red-500/30",
-                savingStatus === 'idle' && "glass text-white/30"
-              )}>
-                {savingStatus === 'saving' && (
-                  <>
-                    <RotateCcw className="w-5 h-5 animate-spin" />
-                    Saving...
-                  </>
-                )}
-                {savingStatus === 'saved' && (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Saved to device
-                  </>
-                )}
-                {savingStatus === 'error' && (
-                  <button onClick={saveToICloud} className="flex items-center gap-2">
-                    <X className="w-5 h-5" />
-                    Save failed — tap to retry
-                  </button>
-                )}
-              </div>
-
-              {/* iCloud Save button */}
-              <motion.button
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                onClick={handleICloudSave}
-                disabled={iCloudStatus === 'saving' || iCloudStatus === 'saved'}
-                className={cn(
-                  "w-full flex items-center justify-center gap-3 font-bold py-4 rounded-2xl transition-all active:scale-[0.97]",
-                  iCloudStatus === 'idle' && "bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/25",
-                  iCloudStatus === 'saving' && "bg-sky-600/50 text-sky-200 cursor-not-allowed",
-                  iCloudStatus === 'saved' && "bg-sky-500/20 text-sky-300 border border-sky-500/30",
-                  iCloudStatus === 'share' && "bg-sky-600/70 hover:bg-sky-600 text-white"
-                )}
-              >
-                {iCloudStatus === 'idle' && <><CloudUpload className="w-5 h-5" />Save to iCloud</>}
-                {iCloudStatus === 'saving' && <><RotateCcw className="w-5 h-5 animate-spin" />Saving...</>}
-                {iCloudStatus === 'saved' && <><CheckCircle2 className="w-5 h-5" />Saved to iCloud</>}
-                {iCloudStatus === 'share' && <><Share2 className="w-5 h-5" />Share to save</>}
-              </motion.button>
-
-              {/* Share/Download CSV button */}
-              <motion.button
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                onClick={shareCSV}
-                className="w-full flex items-center justify-center gap-3 glass-pink text-pink-300 font-bold py-4 rounded-2xl hover:bg-pink-500/20 transition-all active:scale-[0.97]"
-              >
-                {navigator.share && typeof navigator.canShare === 'function'
-                  ? <><Share2 className="w-5 h-5" />Share CSV</>
-                  : <><Download className="w-5 h-5" />Download CSV</>
-                }
-              </motion.button>
-              <button
-                onClick={() => setScreen('select')}
-                className="w-full glass-strong text-white font-bold py-4 rounded-2xl hover:bg-white/20 transition-all"
-              >
-                Done
-              </button>
-            </div>
-          </motion.div>
         )}
       </AnimatePresence>
 
@@ -1428,315 +1318,697 @@ function FeedbackScreen({
           onClick={handleSubmit}
           className="flex-[2] bg-violet-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-violet-600/25 hover:bg-violet-500 transition-all active:scale-[0.98]"
         >
-          Get Coach Review
+          See My Report
         </button>
       </div>
     </motion.div>
   );
 }
 
-// ─── Coach Review Screen ──────────────────────────────────────────────────────
+// ─── Report Screen ────────────────────────────────────────────────────────────
 
-function fatigueBadge(level: FatigueLevel): { label: string; className: string } {
-  switch (level) {
-    case 'fresh': return { label: 'Fresh', className: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
-    case 'normal': return { label: 'Normal', className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
-    case 'accumulating': return { label: 'Accumulating Fatigue', className: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
-    case 'deload_recommended': return { label: 'Deload Recommended', className: 'bg-red-500/20 text-red-400 border-red-500/30' };
-  }
+// Compound lifts that get 1.5x weight in scoring
+const COMPOUND_NAMES = [
+  'barbell bench press',
+  'barbell back squat',
+  'romanian deadlift',
+  'rdl',
+  'overhead press',
+  'ohp',
+  'pull-up',
+  'assisted pull-up',
+];
+
+// Week-8 targets and starting weights for progress bars
+const PROGRESS_TARGETS: Record<string, { start: number; target: number; short: string }> = {
+  'Barbell Bench Press': { start: 80, target: 97.5, short: 'Bench' },
+  'Barbell Back Squat': { start: 90, target: 97.5, short: 'Squat' },
+  'Assisted Pull-Up (Machine or Band)': { start: 0, target: 0, short: 'Pull-Up' }, // handled specially
+};
+
+function parseRepsUpper(reps: string | number | undefined): number {
+  if (reps === undefined || reps === null) return 8;
+  const s = String(reps);
+  // "5-6" → 6, "8-12" → 12, "10 each leg" → 10, "12" → 12
+  const match = s.match(/(\d+)(?:\s*-\s*(\d+))?/);
+  if (!match) return 8;
+  return match[2] ? parseInt(match[2]) : parseInt(match[1]);
 }
 
-function flagBadge(flag: ExerciseFlag): { label: string; className: string } {
-  switch (flag) {
-    case 'strong_session': return { label: 'Strong Session', className: 'bg-emerald-500/15 text-emerald-400' };
-    case 'rpe_spike': return { label: 'RPE Spike', className: 'bg-amber-500/15 text-amber-400' };
-    case 'form_breakdown': return { label: 'Form Breakdown', className: 'bg-red-500/15 text-red-400' };
-    case 'pain': return { label: 'Pain Flagged', className: 'bg-red-500/20 text-red-400' };
-    case 'incomplete': return { label: 'Incomplete', className: 'bg-white/10 text-white/50' };
-    case 'weight_increase_due': return { label: 'Ready to Progress', className: 'bg-violet-500/15 text-violet-400' };
-  }
+function isCompound(name: string): boolean {
+  const lower = name.toLowerCase();
+  return COMPOUND_NAMES.some(c => lower.includes(c));
 }
 
-function adjustmentIcon(type: string) {
-  switch (type) {
-    case 'weight_increase': return <TrendingUp className="w-4 h-4 text-emerald-400" />;
-    case 'weight_reduction': return <TrendingDown className="w-4 h-4 text-red-400" />;
-    case 'deload': return <Minus className="w-4 h-4 text-amber-400" />;
-    case 'volume_reduction': return <AlertTriangle className="w-4 h-4 text-amber-400" />;
-    default: return <Activity className="w-4 h-4 text-white/50" />;
-  }
+interface ExerciseScore {
+  name: string;
+  prescribedWeight: number | null;
+  prescribedReps: number;
+  prescribedSets: number;
+  actualWeight: number;
+  actualReps: number;
+  actualSets: number;
+  rpe: number;
+  loadRatio: number;
+  repRatio: number;
+  setRatio: number;
+  score: number;
+  isCompound: boolean;
+  status: 'exceeded' | 'on_target' | 'missed' | 'no_data';
+  weightDelta: number; // kg above/below
+  repsDelta: number;
 }
 
-function CoachReviewScreen({
+function computeSessionScore(
+  sessionKey: string,
+  setData: { [exIdx: number]: SetEntry[] },
+  skipped: { [exIdx: number]: boolean },
+  exerciseRpe: { [exIdx: number]: number }
+): { score: number; label: string; exerciseScores: ExerciseScore[] } {
+  const session = programme.sessions[sessionKey];
+  if (!session) return { score: 0, label: 'Off day', exerciseScores: [] };
+  const exercises = getSessionExercises(session);
+
+  const exerciseScores: ExerciseScore[] = [];
+
+  for (let idx = 0; idx < exercises.length; idx++) {
+    const ex = exercises[idx];
+    if (ex.type !== 'weight') continue;
+    if (skipped[idx]) continue;
+
+    const sets = (setData[idx] || []).filter(s => s.weight !== '' && s.reps !== '');
+    if (sets.length === 0) continue;
+
+    const prescribedReps = parseRepsUpper(ex.reps);
+    const prescribedSets = ex.sets || 1;
+
+    // Best weight = highest weight across all sets
+    const weights = sets.map(s => parseFloat(s.weight) || 0);
+    const repsBySet = sets.map(s => parseInt(s.reps) || 0);
+    const bestWeight = Math.max(...weights);
+    // Reps at best weight (if multiple sets at that weight, use max reps)
+    const topSetIdx = weights.indexOf(bestWeight);
+    const topSetReps = repsBySet[topSetIdx] ?? Math.max(...repsBySet);
+
+    // Get prescribed weight from last history entry
+    // We don't have history here, so use the coaching engine evaluation if available
+    // For the report we'll look it up from the evaluation passed in
+    const prescribedWeight = null; // will be enriched by caller
+
+    const loadRatio = prescribedWeight !== null && prescribedWeight > 0
+      ? Math.min(1.2, bestWeight / prescribedWeight)
+      : 1.0; // no target available
+    const repRatio = Math.min(1.2, topSetReps / prescribedReps);
+    const setRatio = Math.min(1.2, sets.length / prescribedSets);
+
+    const rawScore = (loadRatio + repRatio + setRatio) / 3;
+    const score = Math.min(1.0, rawScore);
+    const rpe = exerciseRpe[idx] ?? 7;
+
+    // Determine status based on rep ratio (primary metric since weight target is often unknown)
+    let status: ExerciseScore['status'];
+    if (topSetReps >= prescribedReps + 1) status = 'exceeded';
+    else if (topSetReps >= prescribedReps) status = 'on_target';
+    else if (topSetReps >= prescribedReps - 2) status = 'on_target';
+    else status = 'missed';
+
+    exerciseScores.push({
+      name: ex.name,
+      prescribedWeight,
+      prescribedReps,
+      prescribedSets,
+      actualWeight: bestWeight,
+      actualReps: topSetReps,
+      actualSets: sets.length,
+      rpe,
+      loadRatio,
+      repRatio,
+      setRatio,
+      score,
+      isCompound: isCompound(ex.name),
+      status,
+      weightDelta: prescribedWeight !== null ? bestWeight - prescribedWeight : 0,
+      repsDelta: topSetReps - prescribedReps,
+    });
+  }
+
+  // Weighted average: compounds 1.5x
+  let totalWeighted = 0;
+  let totalWeight = 0;
+  for (const es of exerciseScores) {
+    const w = es.isCompound ? 1.5 : 1.0;
+    totalWeighted += es.score * w;
+    totalWeight += w;
+  }
+  const sessionScore = totalWeight > 0 ? Math.round((totalWeighted / totalWeight) * 100) : 0;
+
+  // Determine label
+  const avgRpe = exerciseScores.length > 0
+    ? exerciseScores.reduce((a, b) => a + b.rpe, 0) / exerciseScores.length
+    : 0;
+  const compoundsMissed = exerciseScores.filter(e => e.isCompound && e.status === 'missed').length;
+  const highRpe = exerciseScores.some(e => e.rpe >= 9.5);
+
+  let label: string;
+  if (sessionScore >= 95 && !highRpe) {
+    label = 'Crushed it';
+  } else if (sessionScore >= 80) {
+    label = 'Solid session';
+  } else if (sessionScore >= 65 || avgRpe >= 9) {
+    label = 'Grinding';
+  } else if (sessionScore < 65 || compoundsMissed >= 2) {
+    label = 'Off day';
+  } else {
+    label = 'Grinding';
+  }
+
+  return { score: sessionScore, label, exerciseScores };
+}
+
+function rpeNote(status: ExerciseScore['status'], rpe: number): string | null {
+  if (status === 'exceeded' && rpe <= 8) return 'Green light — programme up';
+  if ((status === 'on_target' || status === 'exceeded') && rpe <= 7) return 'Underloaded — increase next session';
+  if (status === 'on_target' && rpe >= 7.5 && rpe <= 8.5) return 'Perfectly calibrated';
+  if ((status === 'on_target' || status === 'exceeded') && rpe >= 9) return 'Hit it, but costly';
+  if (status === 'missed' && rpe <= 7) return 'Left reps in the tank';
+  if (status === 'missed' && rpe >= 9) return 'Genuinely hard — recover and retest';
+  return null;
+}
+
+function ReportScreen({
+  sessionKey,
+  setData,
+  skipped,
+  elapsed,
   evaluation,
-  onDone
+  savingStatus,
+  iCloudStatus,
+  onICloudSave,
+  onShareCSV,
+  onDone,
 }: {
-  evaluation: SessionEvaluation;
+  sessionKey: string;
+  setData: { [exIdx: number]: SetEntry[] };
+  skipped: { [exIdx: number]: boolean };
+  elapsed: number;
+  evaluation: SessionEvaluation | null;
+  savingStatus: 'idle' | 'saving' | 'saved' | 'error';
+  iCloudStatus: 'idle' | 'saving' | 'saved' | 'share';
+  onICloudSave: () => void;
+  onShareCSV: () => void;
   onDone: (acceptedWeights: Record<string, number>) => void;
 }) {
-  const [accepted, setAccepted] = useState<Record<string, boolean>>({});
-  const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
+  const [showAllExercises, setShowAllExercises] = useState(false);
+  const [acceptedWeights, setAcceptedWeights] = useState<Record<string, number>>({});
+  const [ringAnimated, setRingAnimated] = useState(false);
 
-  const toggleAccept = (exerciseName: string) => {
-    setAccepted(prev => ({ ...prev, [exerciseName]: !prev[exerciseName] }));
-  };
+  useEffect(() => {
+    // Trigger ring animation after mount
+    const t = setTimeout(() => setRingAnimated(true), 100);
+    return () => clearTimeout(t);
+  }, []);
 
-  const toggleExercise = (i: number) => {
-    setExpandedExercises(prev => ({ ...prev, [i]: !prev[i] }));
-  };
+  // Pull exercise RPE values from the evaluation's exercise evaluations as a proxy
+  // We need them indexed by exercise name
+  const evalRpeByName: Record<string, number> = {};
+  if (evaluation) {
+    for (const ee of evaluation.exercise_evaluations) {
+      // Use the midpoint of prescribed RPE as a reference; we'll use the rpe_delta to infer actual
+      const midRpe = (ee.prescribed_rpe_min + ee.prescribed_rpe_max) / 2;
+      evalRpeByName[ee.exercise_name] = Math.min(10, Math.max(1, midRpe + ee.rpe_delta));
+    }
+  }
 
-  const handleContinue = () => {
-    const acceptedWeights: Record<string, number> = {};
-    for (const adj of evaluation.adjustments) {
-      if (accepted[adj.exercise_name]) {
-        acceptedWeights[adj.exercise_name] = adj.recommended_value;
+  // Build exercise RPE map indexed by exercise index
+  const session = programme.sessions[sessionKey];
+  const exercises = getSessionExercises(session);
+  const exerciseRpeByIdx: { [exIdx: number]: number } = {};
+  exercises.forEach((ex, idx) => {
+    if (evalRpeByName[ex.name] !== undefined) {
+      exerciseRpeByIdx[idx] = evalRpeByName[ex.name];
+    }
+  });
+
+  const { score, label, exerciseScores } = computeSessionScore(
+    sessionKey, setData, skipped, exerciseRpeByIdx
+  );
+
+  // Enrich exercise scores with prescribed weight from evaluation
+  if (evaluation) {
+    for (const es of exerciseScores) {
+      const ee = evaluation.exercise_evaluations.find(e => e.exercise_name === es.name);
+      if (ee && ee.prescribed_weight !== null) {
+        es.prescribedWeight = ee.prescribed_weight;
+        es.weightDelta = es.actualWeight - ee.prescribed_weight;
+        // Re-compute load ratio and status with actual prescribed weight
+        es.loadRatio = Math.min(1.2, es.actualWeight / ee.prescribed_weight);
+        if (es.weightDelta > 1) es.status = 'exceeded';
+        else if (es.weightDelta >= -2.5) es.status = 'on_target';
+        else es.status = 'missed';
+      }
+      // Also update RPE from eval
+      const ee2 = evaluation.exercise_evaluations.find(e => e.exercise_name === es.name);
+      if (ee2) {
+        const midRpe = (ee2.prescribed_rpe_min + ee2.prescribed_rpe_max) / 2;
+        es.rpe = Math.min(10, Math.max(1, midRpe + ee2.rpe_delta));
       }
     }
-    onDone(acceptedWeights);
+  }
+
+  // Key callouts: exceeded compounds, missed compounds, anything notable
+  const callouts = exerciseScores.filter(es => {
+    if (es.status === 'exceeded') return true;
+    if (es.isCompound && es.status === 'missed') return true;
+    // Also flag compounds hit at very high RPE
+    if (es.isCompound && es.status === 'on_target' && es.rpe >= 9) return true;
+    return false;
+  }).slice(0, 3);
+
+  // Adj summary lines
+  const adjLines: string[] = [];
+  if (evaluation) {
+    for (const adj of evaluation.adjustments.filter(a => a.type !== 'informational').slice(0, 3)) {
+      const shortName = adj.exercise_name.replace(/^Barbell /, '').replace(/^Assisted /, '').split(' ')[0];
+      if (adj.type === 'weight_increase') {
+        adjLines.push(`${shortName} increases to ${adj.recommended_value}kg next session`);
+      } else if (adj.type === 'weight_reduction') {
+        adjLines.push(`${shortName} drops to ${adj.recommended_value}kg — RPE was high`);
+      } else if (adj.type === 'deload') {
+        adjLines.push(`${shortName} deload: ${adj.recommended_value}kg`);
+      }
+    }
+  }
+
+  // Progress bar data — key compounds toward week-8
+  const progressBars = exerciseScores
+    .filter(es => PROGRESS_TARGETS[es.name] && PROGRESS_TARGETS[es.name].target > 0)
+    .map(es => {
+      const tgt = PROGRESS_TARGETS[es.name];
+      const progress = tgt.start >= tgt.target
+        ? 1
+        : Math.max(0, Math.min(1, (es.actualWeight - tgt.start) / (tgt.target - tgt.start)));
+      // Status from evaluation projections
+      let statusLabel = 'On track';
+      let statusColor = 'text-emerald-400';
+      if (evaluation) {
+        const proj = evaluation.projections.find(p => p.exercise_name === es.name);
+        if (proj) {
+          if (proj.status === 'behind') { statusLabel = 'Behind'; statusColor = 'text-amber-400'; }
+          else if (proj.status === 'ahead') { statusLabel = 'Ahead'; statusColor = 'text-violet-400'; }
+        }
+      }
+      return { name: tgt.short, fullName: es.name, current: es.actualWeight, target: tgt.target, progress, statusLabel, statusColor };
+    });
+
+  // SVG ring constants (circumference for r=45)
+  const circumference = 2 * Math.PI * 45;
+  const dashoffset = circumference - (circumference * score) / 100;
+
+  const labelColors: Record<string, string> = {
+    'Crushed it': 'text-emerald-400',
+    'Solid session': 'text-violet-400',
+    'Grinding': 'text-amber-400',
+    'Off day': 'text-red-400',
   };
 
-  const fb = fatigueBadge(evaluation.fatigue_level);
-  const completedCount = evaluation.exercise_evaluations.filter(e => e.completion_rate >= 0.8).length;
-  const totalCount = evaluation.exercise_evaluations.length;
+  const handleDone = () => {
+    // Auto-accept all weight adjustments from the evaluation
+    const weights: Record<string, number> = {};
+    if (evaluation) {
+      for (const adj of evaluation.adjustments) {
+        if (adj.type === 'weight_increase' || adj.type === 'weight_reduction' || adj.type === 'deload') {
+          weights[adj.exercise_name] = adj.recommended_value;
+        }
+      }
+    }
+    onDone(weights);
+  };
 
   return (
     <motion.div
-      key="coach_review"
+      key="report"
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -40 }}
-      className="max-w-2xl mx-auto px-5 py-10 pb-32"
+      className="max-w-2xl mx-auto px-5 py-10 pb-52"
     >
-      {/* Header */}
-      <header className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <Brain className="w-6 h-6 text-violet-400" />
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400">Coach Review</p>
-        </div>
-        <h1 className="text-3xl font-extrabold text-white">Session Analysis</h1>
-      </header>
+      {/* Top: Score Ring */}
+      <div className="flex flex-col items-center mb-10">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400 mb-5">Session Report</p>
 
-      {/* Section 1: Overview */}
-      <div className="glass rounded-3xl p-5 mb-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-3">Overview</p>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <span className="text-2xl font-black text-white">{Math.round(evaluation.completion_rate * 100)}%</span>
-            <span className="text-white/40 text-sm ml-2">{completedCount}/{totalCount} exercises</span>
+        {/* Ring */}
+        <div className="relative w-32 h-32 mb-4">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+            {/* Track */}
+            <circle
+              cx="50" cy="50" r="45"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="7"
+              className="text-white/8"
+            />
+            {/* Fill */}
+            <motion.circle
+              cx="50" cy="50" r="45"
+              fill="none"
+              stroke="url(#scoreGrad)"
+              strokeWidth="7"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              initial={{ strokeDashoffset: circumference }}
+              animate={{ strokeDashoffset: ringAnimated ? dashoffset : circumference }}
+              transition={{ duration: 1.2, ease: [0.34, 1.2, 0.64, 1] }}
+            />
+            <defs>
+              <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#8b5cf6" />
+                <stop offset="100%" stopColor="#a78bfa" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <motion.span
+              className="text-3xl font-black text-white tabular-nums leading-none"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+            >
+              {score}%
+            </motion.span>
           </div>
-          <span className={cn(
-            "text-xs font-bold px-3 py-1.5 rounded-full border",
-            fb.className
-          )}>
-            {fb.label}
-          </span>
         </div>
-        {/* Completion bar */}
-        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-          <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: `${evaluation.completion_rate * 100}%` }}
-            transition={{ duration: 0.8, ease: 'easeOut' }}
-            className="h-full bg-emerald-500 rounded-full"
-          />
-        </div>
+
+        <motion.h1
+          className={cn("text-2xl font-extrabold", labelColors[label] ?? 'text-white')}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          {label}
+        </motion.h1>
+
+        {/* Quick stats row */}
+        <motion.div
+          className="flex gap-4 mt-5"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 }}
+        >
+          <div className="text-center">
+            <span className="block text-xl font-black text-white">{Math.round(elapsed / 60)}</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">min</span>
+          </div>
+          <div className="w-px bg-white/10" />
+          <div className="text-center">
+            <span className="block text-xl font-black text-white">
+              {Object.values(setData).flat().filter((s: SetEntry) => s.weight !== '' || s.reps !== '').length}
+            </span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">sets</span>
+          </div>
+          <div className="w-px bg-white/10" />
+          <div className="text-center">
+            <span className="block text-xl font-black text-white">
+              {exerciseScores.length}
+            </span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">exercises</span>
+          </div>
+        </motion.div>
       </div>
 
-      {/* Section 2: Exercise Breakdown */}
-      {evaluation.exercise_evaluations.length > 0 && (
-        <div className="mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Exercise Breakdown</p>
-          <div className="space-y-2">
-            {evaluation.exercise_evaluations.map((ex, i) => {
-              const isExpanded = expandedExercises[i];
-              const adjForEx = evaluation.adjustments.find(a => a.exercise_name === ex.exercise_name);
+      {/* Section 1: What Stood Out */}
+      {callouts.length > 0 && (
+        <motion.div
+          className="mb-5"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65 }}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">What Stood Out</p>
+          <div className="glass rounded-3xl overflow-hidden divide-y divide-white/5">
+            {callouts.map((es, i) => {
+              const isExceeded = es.status === 'exceeded';
+              const isMissed = es.status === 'missed';
+              const note = rpeNote(es.status, es.rpe);
+              // Short name (strip "Barbell " prefix)
+              const shortName = es.name.replace(/^Barbell /, '').replace(/^Assisted /, '');
+
               return (
-                <div key={i} className="glass rounded-2xl overflow-hidden">
-                  <button
-                    onClick={() => toggleExercise(i)}
-                    className="w-full p-4 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0 mr-3">
-                      <p className="text-sm font-bold text-white truncate">{ex.exercise_name}</p>
-                      <p className="text-xs text-white/40 mt-0.5">
-                        {ex.avg_weight > 0 ? `${ex.avg_weight.toFixed(1)}kg` : '—'}
-                        {ex.avg_reps > 0 ? ` × ${Math.round(ex.avg_reps)} reps` : ''}
-                        {' · '}{Math.round(ex.completion_rate * 100)}% complete
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {ex.flags.length > 0 && (
-                        <span className={cn(
-                          "text-[10px] font-bold px-2 py-0.5 rounded-full",
-                          flagBadge(ex.flags[0]).className
-                        )}>
-                          {flagBadge(ex.flags[0]).label}
-                        </span>
-                      )}
-                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
-                        <ChevronDown className="w-4 h-4 text-white/30" />
-                      </motion.div>
-                    </div>
-                  </button>
-
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="px-4 pb-4 border-t border-white/5 pt-3 space-y-2">
-                          <div className="flex gap-4 text-xs">
-                            <div>
-                              <span className="text-white/30 uppercase tracking-wider text-[10px]">Prescribed</span>
-                              <p className="text-white/70 font-semibold mt-0.5">
-                                {ex.prescribed_reps_min}–{ex.prescribed_reps_max} reps @ RPE {ex.prescribed_rpe_min}–{ex.prescribed_rpe_max}
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-white/30 uppercase tracking-wider text-[10px]">Achieved</span>
-                              <p className="text-white/70 font-semibold mt-0.5">
-                                {ex.avg_reps > 0 ? `~${Math.round(ex.avg_reps)} reps` : '—'}
-                                {ex.avg_weight > 0 ? ` @ ${ex.avg_weight.toFixed(1)}kg` : ''}
-                              </p>
-                            </div>
-                          </div>
-                          {ex.flags.length > 1 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {ex.flags.slice(1).map(f => (
-                                <span key={f} className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", flagBadge(f).className)}>
-                                  {flagBadge(f).label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {adjForEx && adjForEx.type !== 'informational' && (
-                            <div className="mt-2 p-2.5 bg-white/5 rounded-xl">
-                              <div className="flex items-center gap-2">
-                                {adjustmentIcon(adjForEx.type)}
-                                <span className="text-xs font-semibold text-white/80">
-                                  {adjForEx.type === 'weight_increase'
-                                    ? `Increase to ${adjForEx.recommended_value}kg`
-                                    : adjForEx.type === 'weight_reduction' || adjForEx.type === 'deload'
-                                    ? `Reduce to ${adjForEx.recommended_value}kg`
-                                    : adjForEx.reason}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Section 3: Recommendations */}
-      {evaluation.adjustments.filter(a => a.type !== 'informational').length > 0 && (
-        <div className="mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Recommendations</p>
-          <div className="space-y-2">
-            {evaluation.adjustments
-              .filter(a => a.type !== 'informational')
-              .map((adj, i) => (
-                <div key={i} className="glass rounded-2xl p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 shrink-0">{adjustmentIcon(adj.type)}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-white">
-                        {adj.type === 'weight_increase'
-                          ? `${adj.exercise_name} → ${adj.recommended_value}kg`
-                          : adj.type === 'weight_reduction' || adj.type === 'deload'
-                          ? `${adj.exercise_name} → ${adj.recommended_value}kg`
-                          : adj.exercise_name}
-                      </p>
-                      <p className="text-xs text-white/50 mt-0.5">{adj.reason}</p>
-                      {adj.evidence.length > 0 && (
-                        <p className="text-[11px] text-white/30 mt-1">{adj.evidence[0]}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => toggleAccept(adj.exercise_name)}
-                      className={cn(
-                        "shrink-0 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all",
-                        accepted[adj.exercise_name]
-                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                          : "bg-white/5 border-white/10 text-white/40 hover:text-white/60 hover:bg-white/10"
-                      )}
-                    >
-                      {accepted[adj.exercise_name] ? 'Accepted' : 'Accept'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* Section 4: Projections */}
-      {evaluation.projections.length > 0 && (
-        <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Week 8 Targets</p>
-          <div className="space-y-2">
-            {evaluation.projections.map((proj, i) => {
-              const pct = Math.min(1, proj.current_weight / proj.target_weight);
-              const statusColors: Record<string, string> = {
-                on_track: 'text-emerald-400',
-                ahead: 'text-violet-400',
-                behind: 'text-amber-400'
-              };
-              const statusLabels: Record<string, string> = {
-                on_track: 'On Track',
-                ahead: 'Ahead',
-                behind: 'Behind'
-              };
-              return (
-                <div key={i} className="glass rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-bold text-white truncate mr-3">{proj.exercise_name}</p>
-                    <span className={cn("text-[10px] font-black uppercase tracking-widest shrink-0", statusColors[proj.status])}>
-                      {statusLabels[proj.status]}
+                <div key={i} className="p-4">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className={cn(
+                      "text-sm font-black",
+                      isExceeded ? "text-emerald-400" : isMissed ? "text-amber-400" : "text-white"
+                    )}>
+                      {isExceeded ? '↑' : isMissed ? '↓' : '→'} {shortName}
                     </span>
+                    <span className="text-sm font-bold text-white tabular-nums">
+                      {es.actualWeight}kg x{es.actualReps}
+                    </span>
+                    {es.prescribedWeight !== null && (
+                      <span className={cn(
+                        "text-xs font-semibold",
+                        isExceeded ? "text-emerald-400" : isMissed ? "text-amber-400" : "text-white/40"
+                      )}>
+                        {es.weightDelta > 0 ? `+${es.weightDelta.toFixed(1)}kg` : es.weightDelta < 0 ? `${es.weightDelta.toFixed(1)}kg` : 'on target'}
+                        {es.prescribedWeight !== null && es.weightDelta !== 0 ? ' vs target' : ''}
+                      </span>
+                    )}
+                    {es.prescribedWeight === null && es.repsDelta !== 0 && (
+                      <span className={cn(
+                        "text-xs font-semibold",
+                        es.repsDelta > 0 ? "text-emerald-400" : "text-amber-400"
+                      )}>
+                        {es.repsDelta > 0 ? `+${es.repsDelta}` : `${es.repsDelta}`} reps vs target
+                      </span>
+                    )}
+                    <span className="text-xs font-semibold text-white/30 ml-auto">RPE {es.rpe.toFixed(1)}</span>
                   </div>
-                  <div className="flex items-center gap-3 mb-2.5">
-                    <span className="text-lg font-black text-white">{proj.current_weight}kg</span>
-                    <div className="flex-1 flex items-center gap-1">
-                      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${pct * 100}%` }}
-                          transition={{ duration: 0.8, ease: 'easeOut' }}
-                          className={cn("h-full rounded-full", proj.status === 'behind' ? 'bg-amber-500' : proj.status === 'ahead' ? 'bg-violet-500' : 'bg-emerald-500')}
-                        />
-                      </div>
-                    </div>
-                    <span className="text-lg font-black text-white/40">{proj.target_weight}kg</span>
-                  </div>
-                  <p className="text-[11px] text-white/30">
-                    {proj.weeks_remaining}w remaining · Need +{proj.required_per_week.toFixed(1)}kg/wk · Actual +{proj.actual_per_week.toFixed(1)}kg/wk
-                  </p>
+                  {note && (
+                    <p className="text-[11px] text-white/40 mt-1 italic">{note}</p>
+                  )}
                 </div>
               );
             })}
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* Continue button */}
+      {/* Section 2: Next Session */}
+      <motion.div
+        className="mb-5"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.75 }}
+      >
+        <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Next Session</p>
+        <div className="glass rounded-3xl p-4 space-y-2.5">
+          {adjLines.length > 0 ? (
+            adjLines.map((line, i) => {
+              const isIncrease = line.includes('increases');
+              const isDecrease = line.includes('drops') || line.includes('deload');
+              return (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span className={cn(
+                    "mt-0.5 shrink-0",
+                    isIncrease ? "text-emerald-400" : isDecrease ? "text-amber-400" : "text-white/40"
+                  )}>
+                    {isIncrease ? <TrendingUp className="w-3.5 h-3.5" /> : isDecrease ? <TrendingDown className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
+                  </span>
+                  <span className="text-sm text-white/80 font-medium">{line}</span>
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-sm text-white/50 font-medium">All loads stay the same — keep building.</p>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Section 3: Big Picture — Progress Bars */}
+      {progressBars.length > 0 && (
+        <motion.div
+          className="mb-5"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.85 }}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Big Picture</p>
+          <div className="glass rounded-3xl p-4 space-y-5">
+            {progressBars.map((bar, i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-sm font-bold text-white">{bar.name}</span>
+                  <span className={cn("text-[10px] font-black uppercase tracking-widest", bar.statusColor)}>
+                    {bar.statusLabel}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mb-1">
+                  <span className="text-xs font-bold text-white/60 tabular-nums w-12">{bar.current}kg</span>
+                  <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${bar.progress * 100}%` }}
+                      transition={{ duration: 1, ease: 'easeOut', delay: 0.9 + i * 0.1 }}
+                      className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400"
+                    />
+                  </div>
+                  <span className="text-xs font-bold text-white/30 tabular-nums w-14 text-right">{bar.target}kg</span>
+                </div>
+                <p className="text-[10px] text-white/30">
+                  {bar.current >= bar.target
+                    ? 'Week 8 target achieved'
+                    : `${(bar.target - bar.current).toFixed(1)}kg to week 8 target`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Expandable Full Details */}
+      <motion.div
+        className="mb-6"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.95 }}
+      >
+        <button
+          onClick={() => setShowAllExercises(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 glass rounded-2xl text-sm font-semibold text-white/40 hover:text-white/60 hover:bg-white/10 transition-all"
+        >
+          <span>{showAllExercises ? 'Hide details' : 'Show all exercises'}</span>
+          <motion.div animate={{ rotate: showAllExercises ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown className="w-4 h-4" />
+          </motion.div>
+        </button>
+
+        <AnimatePresence>
+          {showAllExercises && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-2 space-y-2">
+                {exerciseScores.map((es, i) => {
+                  const statusColors = {
+                    exceeded: 'text-emerald-400',
+                    on_target: 'text-white/70',
+                    missed: 'text-amber-400',
+                    no_data: 'text-white/30',
+                  };
+                  const statusLabels = {
+                    exceeded: 'EXCEEDED',
+                    on_target: 'ON TARGET',
+                    missed: 'MISSED',
+                    no_data: 'NO DATA',
+                  };
+                  const badgeColors = {
+                    exceeded: 'bg-emerald-500/15 text-emerald-400',
+                    on_target: 'bg-white/10 text-white/50',
+                    missed: 'bg-amber-500/15 text-amber-400',
+                    no_data: 'bg-white/5 text-white/20',
+                  };
+                  return (
+                    <div key={i} className="glass rounded-2xl p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <p className="text-sm font-bold text-white leading-snug">{es.name}</p>
+                        <span className={cn("text-[9px] font-black uppercase tracking-widest shrink-0 px-2 py-0.5 rounded-full", badgeColors[es.status])}>
+                          {statusLabels[es.status]}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-center">
+                        <div>
+                          <span className="block text-base font-black text-white">{es.actualWeight}kg</span>
+                          <span className="text-[9px] text-white/30 uppercase tracking-wider">weight</span>
+                        </div>
+                        <div>
+                          <span className="block text-base font-black text-white">{es.actualReps}</span>
+                          <span className="text-[9px] text-white/30 uppercase tracking-wider">reps</span>
+                        </div>
+                        <div>
+                          <span className="block text-base font-black text-white">{es.actualSets}</span>
+                          <span className="text-[9px] text-white/30 uppercase tracking-wider">sets</span>
+                        </div>
+                        <div>
+                          <span className={cn("block text-base font-black", statusColors[es.status])}>{es.rpe.toFixed(1)}</span>
+                          <span className="text-[9px] text-white/30 uppercase tracking-wider">rpe</span>
+                        </div>
+                      </div>
+                      {es.prescribedWeight !== null && (
+                        <p className="text-[10px] text-white/30 mt-2">
+                          Target: {es.prescribedWeight}kg × {es.prescribedReps} reps × {es.prescribedSets} sets
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+                {exerciseScores.length === 0 && (
+                  <div className="text-center py-6 text-white/30 text-sm">No weighted exercises logged.</div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Bottom buttons */}
       <div className="fixed bottom-0 left-0 right-0 p-5 bottom-fade pointer-events-none">
-        <div className="max-w-2xl mx-auto pointer-events-auto">
-          <button
-            onClick={handleContinue}
-            className="w-full bg-emerald-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/25 hover:bg-emerald-400 transition-all active:scale-[0.98]"
-          >
-            Continue to Summary
-          </button>
+        <div className="max-w-2xl mx-auto pointer-events-auto space-y-3">
+
+          {/* Save status */}
+          <div className={cn(
+            "w-full flex items-center justify-center gap-2.5 font-bold py-3 rounded-2xl text-sm transition-all",
+            savingStatus === 'saving' && "glass text-white/40",
+            savingStatus === 'saved' && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
+            savingStatus === 'error' && "bg-red-500/15 text-red-400 border border-red-500/20",
+            savingStatus === 'idle' && "glass text-white/20"
+          )}>
+            {savingStatus === 'saving' && <><RotateCcw className="w-4 h-4 animate-spin" />Saving...</>}
+            {savingStatus === 'saved' && <><CheckCircle2 className="w-4 h-4" />Saved to device</>}
+            {savingStatus === 'error' && <span>Save failed</span>}
+            {savingStatus === 'idle' && <span>Saving...</span>}
+          </div>
+
+          <div className="flex gap-3">
+            {/* iCloud save */}
+            <button
+              onClick={onICloudSave}
+              disabled={iCloudStatus === 'saving' || iCloudStatus === 'saved'}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 font-bold py-4 rounded-2xl text-sm transition-all active:scale-[0.97]",
+                iCloudStatus === 'idle' && "bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/25",
+                iCloudStatus === 'saving' && "bg-sky-600/50 text-sky-200 cursor-not-allowed",
+                iCloudStatus === 'saved' && "bg-sky-500/20 text-sky-300 border border-sky-500/30",
+                iCloudStatus === 'share' && "bg-sky-600/70 hover:bg-sky-600 text-white"
+              )}
+            >
+              {iCloudStatus === 'idle' && <><CloudUpload className="w-4 h-4" />iCloud</>}
+              {iCloudStatus === 'saving' && <><RotateCcw className="w-4 h-4 animate-spin" />Saving</>}
+              {iCloudStatus === 'saved' && <><CheckCircle2 className="w-4 h-4" />Saved</>}
+              {iCloudStatus === 'share' && <><Share2 className="w-4 h-4" />Share</>}
+            </button>
+
+            {/* Share / Download CSV */}
+            <button
+              onClick={onShareCSV}
+              className="flex-1 flex items-center justify-center gap-2 glass-pink text-pink-300 font-bold py-4 rounded-2xl text-sm hover:bg-pink-500/20 transition-all active:scale-[0.97]"
+            >
+              {typeof navigator !== 'undefined' && navigator.share
+                ? <><Share2 className="w-4 h-4" />CSV</>
+                : <><Download className="w-4 h-4" />CSV</>
+              }
+            </button>
+
+            {/* Done */}
+            <button
+              onClick={handleDone}
+              className="flex-[2] bg-violet-600 text-white font-bold py-4 rounded-2xl hover:bg-violet-500 transition-all active:scale-[0.98] shadow-lg shadow-violet-600/25"
+            >
+              Done
+            </button>
+          </div>
         </div>
       </div>
     </motion.div>
