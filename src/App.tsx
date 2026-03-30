@@ -610,7 +610,7 @@ export default function App() {
       <div className="relative z-10">
       <AnimatePresence mode="wait">
         {screen === 'select' && (() => {
-          // Map day-of-week to session (0=Sun, 1=Mon, ..., 6=Sat)
+          // Default day-of-week schedule (0=Sun, 1=Mon, ..., 6=Sat)
           const DAY_TO_SESSION: Record<number, string> = {
             1: 'push_b',     // Mon — Pump Push
             2: 'pull_b',     // Tue — Pump Pull
@@ -620,8 +620,38 @@ export default function App() {
             6: 'push_a',     // Sat — Heavy Push
             0: 'pull_a',     // Sun — Heavy Pull
           };
+
+          // Muscle group conflict detection — check what was trained recently
+          const MUSCLE_GROUPS: Record<string, string> = {
+            push_a: 'push', push_b: 'push',
+            pull_a: 'pull', pull_b: 'pull',
+            legs_core: 'legs', cardio_day: 'cardio', day_7: 'rest',
+          };
+
+          // Find the most recent session from history (within last 48h)
+          const recentSession = historyData.length > 0 ? historyData[0] : null;
+          const recentType = recentSession?.sessionType?.toLowerCase() || '';
+          const recentDateStr = recentSession?.date?.replace(/\s*\(.*\)/, '') || '';
+          const recentDate = recentDateStr ? new Date(recentDateStr) : null;
+          const hoursSinceLast = recentDate ? (Date.now() - recentDate.getTime()) / (1000 * 60 * 60) : 999;
+
+          const recentGroup = recentType.includes('push') ? 'push'
+            : recentType.includes('pull') ? 'pull'
+            : recentType.includes('leg') ? 'legs' : '';
+
           const todayDow = new Date().getDay();
-          const todaySessionKey = DAY_TO_SESSION[todayDow];
+          let todaySessionKey = DAY_TO_SESSION[todayDow];
+
+          // If same muscle group was trained within 36 hours, swap to next different session
+          if (hoursSinceLast < 36 && recentGroup && MUSCLE_GROUPS[todaySessionKey] === recentGroup) {
+            // Find the next session in the week that uses a different muscle group
+            const SWAP_ORDER: Record<string, string> = {
+              push_b: 'pull_b', push_a: 'pull_a',  // push conflict → do pull
+              pull_b: 'push_b', pull_a: 'push_a',  // pull conflict → do push (rare)
+            };
+            todaySessionKey = SWAP_ORDER[todaySessionKey] || todaySessionKey;
+          }
+
           const todaySession = programme.sessions[todaySessionKey];
 
           // Priority order: today removed, then upcoming days in order from tomorrow
