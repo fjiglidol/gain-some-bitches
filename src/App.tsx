@@ -27,15 +27,13 @@ import {
   TrendingDown,
   Minus,
   AlertTriangle,
-  Zap,
   Moon,
-  Star,
   Activity,
-  ChevronUp
+  CloudUpload
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { format } from 'date-fns';
+import { format, differenceInDays, parseISO } from 'date-fns';
 import programmeData from './data/programme.json';
 import { Programme, Session, Exercise, SetEntry, SessionProgress } from './types';
 import {
@@ -142,6 +140,7 @@ export default function App() {
     exName: ''
   });
 
+  const [exerciseRpe, setExerciseRpe] = useState<{ [exIdx: number]: number }>({});
   const [historyData, setHistoryData] = useState<{ date: string; sessionType: string; exercises: { exercise: string; weight: string; sets: string; reps: string; notes: string }[] }[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -273,6 +272,7 @@ export default function App() {
     } else {
       setCurrentSessionKey(key);
       const initialSetData: { [idx: number]: SetEntry[] } = {};
+      const initialRpe: { [idx: number]: number } = {};
       const exercises = getSessionExercises(session);
       exercises.forEach((ex, idx) => {
         initialSetData[idx] = Array.from({ length: ex.sets || 1 }, () => ({
@@ -281,8 +281,12 @@ export default function App() {
           note: '',
           logged: false
         }));
+        if (ex.type === 'weight') {
+          initialRpe[idx] = 7; // default RPE
+        }
       });
       setSetData(initialSetData);
+      setExerciseRpe(initialRpe);
       setSkipped({});
       setElapsed(0);
 
@@ -384,10 +388,10 @@ export default function App() {
   const generateCSV = () => {
     if (!currentSessionKey) return '';
     const session = programme.sessions[currentSessionKey];
-    const header = 'Date,Session_Type,Exercise,Weight_kg,Sets,Reps,Notes';
+    const header = 'Date,Session_Type,Exercise,Weight_kg,Sets,Reps,RPE,Notes';
     const dateStr = format(new Date(), 'yyyy-MM-dd (EEE)');
     const sessionType = session.label.split(' — ')[1] || session.label;
-    
+
     const exercises = getSessionExercises(session);
     const lines = [header];
     exercises.forEach((ex, idx) => {
@@ -398,15 +402,17 @@ export default function App() {
 
       const weights = loggedSets.map(s => s.weight || '0').join('/');
       const reps = loggedSets.map(s => s.reps || (ex.duration_seconds ? `${ex.duration_seconds}s` : '0')).join('/');
+      const rpeVal = ex.type === 'weight' ? (exerciseRpe[idx] ?? 7) : '';
       const notes = loggedSets.map(s => s.note).filter(Boolean).join('; ');
-      
-      lines.push(`"${dateStr}","${sessionType}","${ex.name}","${weights}",${loggedSets.length},"${reps}","${notes}"`);
+
+      lines.push(`"${dateStr}","${sessionType}","${ex.name}","${weights}",${loggedSets.length},"${reps}",${rpeVal},"${notes}"`);
     });
 
     return lines.join('\n');
   };
 
   const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [iCloudStatus, setICloudStatus] = useState<'idle' | 'saving' | 'saved' | 'share'>('idle');
 
   const saveToICloud = async () => {
     const csv = generateCSV();
@@ -500,13 +506,80 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleICloudSave = async () => {
+    const csv = generateCSV();
+    if (!csv || csv.split('\n').length <= 1) return;
+
+    setICloudStatus('saving');
+
+    // Try API endpoint first
+    try {
+      const res = await fetch('/api/save-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv })
+      });
+      if (res.ok) {
+        setICloudStatus('saved');
+        return;
+      }
+    } catch {
+      // API unavailable — fall through to Web Share
+    }
+
+    // API failed (PWA/GitHub Pages) — use Web Share API for iOS Files/iCloud
+    const filename = getCSVFilename();
+    const file = new File([csv], filename, { type: 'text/csv' });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        setICloudStatus('saved');
+        return;
+      } catch (err) {
+        if ((err as DOMException)?.name === 'AbortError') {
+          setICloudStatus('idle');
+          return;
+        }
+      }
+    }
+
+    // Final fallback: show share prompt state
+    setICloudStatus('share');
+  };
+
   return (
     <div className="min-h-screen font-sans selection:bg-violet-500/30 selection:text-white relative">
       <div className="app-bg" />
 
       <div className="relative z-10">
       <AnimatePresence mode="wait">
-        {screen === 'select' && (
+        {screen === 'select' && (() => {
+          // Map day-of-week to session (0=Sun, 1=Mon, ..., 6=Sat)
+          const DAY_TO_SESSION: Record<number, string> = {
+            1: 'push_b',     // Mon — Pump Push
+            2: 'pull_b',     // Tue — Pump Pull
+            3: 'cardio_day', // Wed — Cardio
+            4: 'day_7',      // Thu — Rest / Recovery
+            5: 'legs_core',  // Fri — Legs + Core
+            6: 'push_a',     // Sat — Heavy Push
+            0: 'pull_a',     // Sun — Heavy Pull
+          };
+          const todayDow = new Date().getDay();
+          const todaySessionKey = DAY_TO_SESSION[todayDow];
+          const todaySession = programme.sessions[todaySessionKey];
+
+          // Priority order: today removed, then upcoming days in order from tomorrow
+          const priorityOrder: string[] = [];
+          for (let i = 1; i <= 6; i++) {
+            const dow = (todayDow + i) % 7;
+            const key = DAY_TO_SESSION[dow];
+            if (key !== todaySessionKey) priorityOrder.push(key);
+          }
+          const otherSessions = priorityOrder
+            .filter((key, idx, arr) => arr.indexOf(key) === idx)
+            .map(key => [key, programme.sessions[key]] as [string, typeof programme.sessions[typeof key]]);
+
+          return (
           <motion.div
             key="select"
             initial={{ opacity: 0, y: 10 }}
@@ -514,48 +587,103 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             className="max-w-2xl mx-auto px-5 py-10"
           >
-            <header className="mb-10">
-              <h1 className="text-4xl font-extrabold tracking-tight text-white mb-1">Gain Some Bitches</h1>
-              <p className="text-white/50 font-medium">{format(new Date(), 'EEEE, MMMM do')}</p>
+            <header className="mb-8">
+              <p className="text-2xl font-bold text-white">{format(new Date(), 'EEEE, MMMM do')}</p>
             </header>
 
-            <div className="grid gap-3">
-              {Object.entries(programme.sessions).map(([key, session]) => (
-                <motion.button
-                  key={key}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => startSession(key)}
-                  className="group relative flex flex-col items-start p-5 glass rounded-2xl hover:bg-white/12 transition-all text-left overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 p-5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ArrowRight className="w-5 h-5 text-violet-400" />
+            {/* Today's Session — Hero Card */}
+            {todaySession && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 }}
+                className="mb-6"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2 px-1">Today's Session</p>
+                <div className="glass rounded-3xl overflow-hidden">
+                  <div className="p-6">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-2 block">{todaySession.focus}</span>
+                    <h2 className="text-2xl font-extrabold text-white mb-1 leading-tight">
+                      {todaySession.label.split(' — ')[1] || todaySession.label}
+                    </h2>
+                    <p className="text-sm text-white/40 mb-5">{todaySession.label.split(' — ')[0]}</p>
+                    <div className="flex gap-2 mb-6">
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-white/10 text-[12px] font-semibold text-white/60">
+                        <Timer className="w-3.5 h-3.5 mr-1.5" />
+                        {todaySession.estimated_duration_minutes}m
+                      </span>
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-white/10 text-[12px] font-semibold text-white/60">
+                        <Dumbbell className="w-3.5 h-3.5 mr-1.5" />
+                        {isCardioDay(todaySession)
+                          ? 'Cardio'
+                          : isRestDay(todaySession)
+                          ? 'Rest Day'
+                          : `${getSessionExercises(todaySession).length} Exercises`}
+                      </span>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => startSession(todaySessionKey)}
+                      className="w-full flex items-center justify-center gap-3 bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-2xl transition-all"
+                    >
+                      Start Today's Workout
+                      <ArrowRight className="w-5 h-5" />
+                    </motion.button>
                   </div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-1.5">{session.focus}</span>
-                  <h3 className="text-lg font-bold text-white mb-3">{session.label}</h3>
-                  <div className="flex gap-2">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-semibold text-white/70">
-                      <Timer className="w-3 h-3 mr-1" />
-                      {session.estimated_duration_minutes}m
-                    </span>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-semibold text-white/70">
-                      <Dumbbell className="w-3 h-3 mr-1" />
-                      {isCardioDay(session)
-                        ? 'Cardio'
-                        : isRestDay(session)
-                        ? 'Rest Day'
-                        : `${getSessionExercises(session).length} Exercises`}
-                    </span>
-                  </div>
-                </motion.button>
-              ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Other Sessions — compact grid, ordered by upcoming day */}
+            <div className="mb-6">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-3 px-1">Upcoming</p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {otherSessions.map(([key, session]) => {
+                  const SESSION_TO_DAY: Record<string, string> = {
+                    push_b: 'Mon', pull_b: 'Tue', cardio_day: 'Wed',
+                    day_7: 'Thu', legs_core: 'Fri', push_a: 'Sat', pull_a: 'Sun'
+                  };
+                  return (
+                  <motion.button
+                    key={key}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => startSession(key)}
+                    className="group relative flex flex-col items-start p-4 glass rounded-2xl hover:bg-white/10 transition-all text-left overflow-hidden"
+                  >
+                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ArrowRight className="w-4 h-4 text-violet-400" />
+                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 mb-1">{SESSION_TO_DAY[key] || ''} — {session.focus}</span>
+                    <h3 className="text-sm font-bold text-white mb-2.5 leading-snug pr-5">
+                      {session.label.split(' — ')[1] || session.label}
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-semibold text-white/60">
+                        <Timer className="w-2.5 h-2.5 mr-1" />
+                        {session.estimated_duration_minutes}m
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-semibold text-white/60">
+                        <Dumbbell className="w-2.5 h-2.5 mr-1" />
+                        {isCardioDay(session)
+                          ? 'Cardio'
+                          : isRestDay(session)
+                          ? 'Rest'
+                          : `${getSessionExercises(session).length}ex`}
+                      </span>
+                    </div>
+                  </motion.button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Past Workouts */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="mt-6"
+              className="mt-2"
             >
               <button
                 onClick={() => setHistoryOpen(!historyOpen)}
@@ -596,7 +724,8 @@ export default function App() {
               </AnimatePresence>
             </motion.div>
           </motion.div>
-        )}
+          );
+        })()}
 
         {screen === 'workout' && currentSessionKey && (
           <motion.div
@@ -649,6 +778,7 @@ export default function App() {
                   sets={setData[idx] || []}
                   isSkipped={skipped[idx]}
                   ghostWeight={recommendedWeights[ex.name] ?? null}
+                  rpe={exerciseRpe[idx] ?? 7}
                   onUpdateSet={(si, field, val) => {
                     const newData = { ...setData };
                     newData[idx][si] = { ...newData[idx][si], [field]: val };
@@ -678,6 +808,9 @@ export default function App() {
                   }}
                   onStartRest={(secs) => {
                     setRestTimer({ active: true, remaining: secs, total: secs, exName: ex.name });
+                  }}
+                  onRpeChange={(val) => {
+                    setExerciseRpe(prev => ({ ...prev, [idx]: val }));
                   }}
                 />
               ))}
@@ -755,6 +888,7 @@ export default function App() {
             </div>
 
             <div className="space-y-4">
+              {/* Auto-save status indicator */}
               <div className={cn(
                 "w-full flex items-center justify-center gap-3 font-bold py-4 rounded-2xl transition-all",
                 savingStatus === 'saving' && "glass text-white/50",
@@ -771,7 +905,7 @@ export default function App() {
                 {savingStatus === 'saved' && (
                   <>
                     <CheckCircle2 className="w-5 h-5" />
-                    Workout saved
+                    Saved to device
                   </>
                 )}
                 {savingStatus === 'error' && (
@@ -781,6 +915,29 @@ export default function App() {
                   </button>
                 )}
               </div>
+
+              {/* iCloud Save button */}
+              <motion.button
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                onClick={handleICloudSave}
+                disabled={iCloudStatus === 'saving' || iCloudStatus === 'saved'}
+                className={cn(
+                  "w-full flex items-center justify-center gap-3 font-bold py-4 rounded-2xl transition-all active:scale-[0.97]",
+                  iCloudStatus === 'idle' && "bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/25",
+                  iCloudStatus === 'saving' && "bg-sky-600/50 text-sky-200 cursor-not-allowed",
+                  iCloudStatus === 'saved' && "bg-sky-500/20 text-sky-300 border border-sky-500/30",
+                  iCloudStatus === 'share' && "bg-sky-600/70 hover:bg-sky-600 text-white"
+                )}
+              >
+                {iCloudStatus === 'idle' && <><CloudUpload className="w-5 h-5" />Save to iCloud</>}
+                {iCloudStatus === 'saving' && <><RotateCcw className="w-5 h-5 animate-spin" />Saving...</>}
+                {iCloudStatus === 'saved' && <><CheckCircle2 className="w-5 h-5" />Saved to iCloud</>}
+                {iCloudStatus === 'share' && <><Share2 className="w-5 h-5" />Share to save</>}
+              </motion.button>
+
+              {/* Share/Download CSV button */}
               <motion.button
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -789,7 +946,7 @@ export default function App() {
                 className="w-full flex items-center justify-center gap-3 glass-pink text-pink-300 font-bold py-4 rounded-2xl hover:bg-pink-500/20 transition-all active:scale-[0.97]"
               >
                 {navigator.share && typeof navigator.canShare === 'function'
-                  ? <><Share2 className="w-5 h-5" />Save to Files</>
+                  ? <><Share2 className="w-5 h-5" />Share CSV</>
                   : <><Download className="w-5 h-5" />Download CSV</>
                 }
               </motion.button>
@@ -867,22 +1024,26 @@ function ExerciseCard({
   sets,
   isSkipped,
   ghostWeight,
+  rpe,
   onUpdateSet,
   onToggleSkip,
   onAddSet,
   onAddDropSet,
-  onStartRest
+  onStartRest,
+  onRpeChange
 }: {
   idx: number;
   exercise: Exercise;
   sets: SetEntry[];
   isSkipped: boolean;
   ghostWeight: number | null;
+  rpe: number;
   onUpdateSet: (si: number, field: keyof SetEntry, val: any) => void;
   onToggleSkip: () => void;
   onAddSet: () => void;
   onAddDropSet: () => void;
   onStartRest: (secs: number) => void;
+  onRpeChange: (val: number) => void;
   [key: string]: any;
 }) {
   const [isOpen, setIsOpen] = useState(idx === 0);
@@ -997,6 +1158,37 @@ function ExerciseCard({
               ))}
             </div>
 
+            {/* RPE picker — only for weighted exercises */}
+            {exercise.type === 'weight' && (
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">Effort</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {[6, 7, 8, 9, 10].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => onRpeChange(n)}
+                        className={cn(
+                          "w-9 h-9 rounded-xl text-sm font-black border transition-all active:scale-90",
+                          rpe === n
+                            ? "bg-violet-600 border-violet-500 text-white shadow-sm shadow-violet-600/30"
+                            : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white/60"
+                        )}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-between px-0.5">
+                  <span className="text-[9px] text-white/20 font-medium">6 Easy</span>
+                  <span className="text-[9px] text-white/20 font-medium">10 Max</span>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
                 onClick={onAddSet}
@@ -1056,73 +1248,6 @@ function HistoryCard({ session, ...rest }: { session: { date: string; sessionTyp
 
 // ─── Feedback Screen ──────────────────────────────────────────────────────────
 
-function ScorePicker({
-  label,
-  icon,
-  value,
-  onChange,
-  lowLabel,
-  highLabel,
-  color = 'violet'
-}: {
-  label: string;
-  icon: React.ReactNode;
-  value: number;
-  onChange: (v: number) => void;
-  lowLabel: string;
-  highLabel: string;
-  color?: 'violet' | 'emerald' | 'amber' | 'pink';
-}) {
-  const colorMap = {
-    violet: {
-      active: 'bg-violet-500 text-white border-violet-500',
-      hover: 'hover:bg-violet-500/20 hover:border-violet-500/50'
-    },
-    emerald: {
-      active: 'bg-emerald-500 text-white border-emerald-500',
-      hover: 'hover:bg-emerald-500/20 hover:border-emerald-500/50'
-    },
-    amber: {
-      active: 'bg-amber-500 text-white border-amber-500',
-      hover: 'hover:bg-amber-500/20 hover:border-amber-500/50'
-    },
-    pink: {
-      active: 'bg-pink-500 text-white border-pink-500',
-      hover: 'hover:bg-pink-500/20 hover:border-pink-500/50'
-    }
-  };
-  const c = colorMap[color];
-
-  return (
-    <div className="mb-5">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-white/50">{icon}</span>
-        <span className="text-sm font-bold text-white">{label}</span>
-      </div>
-      <div className="flex gap-2">
-        {[1, 2, 3, 4, 5].map(n => (
-          <button
-            key={n}
-            onClick={() => onChange(n)}
-            className={cn(
-              "flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all active:scale-95",
-              value === n
-                ? c.active
-                : `bg-white/5 border-white/10 text-white/40 ${c.hover}`
-            )}
-          >
-            {n}
-          </button>
-        ))}
-      </div>
-      <div className="flex justify-between mt-1.5 px-0.5">
-        <span className="text-[10px] text-white/30 font-medium">{lowLabel}</span>
-        <span className="text-[10px] text-white/30 font-medium">{highLabel}</span>
-      </div>
-    </div>
-  );
-}
-
 function FeedbackScreen({
   onSubmit,
   onSkip
@@ -1130,19 +1255,46 @@ function FeedbackScreen({
   onSubmit: (f: PostSessionFeedback) => void;
   onSkip: () => void;
 }) {
-  const [soreness, setSoreness] = useState<number>(3);
-  const [energy, setEnergy] = useState<number>(3);
-  const [sleep, setSleep] = useState<string>('7');
-  const [rating, setRating] = useState<number>(3);
+  // session rating: rough=2, solid=3, great=5
+  const SESSION_OPTS: { label: string; emoji: string; value: 1 | 2 | 3 | 4 | 5 }[] = [
+    { label: 'Rough', emoji: '👎', value: 2 },
+    { label: 'Solid', emoji: '👊', value: 3 },
+    { label: 'Great', emoji: '💪', value: 5 },
+  ];
+  // body/soreness: fresh=1, normal=3, beat_up=5
+  const BODY_OPTS: { label: string; value: 1 | 2 | 3 | 4 | 5 }[] = [
+    { label: 'Fresh', value: 1 },
+    { label: 'Normal', value: 3 },
+    { label: 'Beat Up', value: 5 },
+  ];
+
+  const [sessionRating, setSessionRating] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [bodyScore, setBodyScore] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [sleepHours, setSleepHours] = useState<number>(7);
+  const [noteOpen, setNoteOpen] = useState(false);
   const [notes, setNotes] = useState('');
+
+  // energy_score: mirror session rating (rough=2 → drained, great=5 → energised)
+  const energyFromRating = (r: number): 1 | 2 | 3 | 4 | 5 => {
+    if (r <= 2) return 2;
+    if (r === 3) return 3;
+    return 5;
+  };
 
   const handleSubmit = () => {
     onSubmit({
-      soreness_score: soreness as 1 | 2 | 3 | 4 | 5,
-      energy_score: energy as 1 | 2 | 3 | 4 | 5,
-      sleep_hours: Math.max(0, Math.min(24, parseFloat(sleep) || 7)),
-      session_rating: rating as 1 | 2 | 3 | 4 | 5,
+      soreness_score: bodyScore,
+      energy_score: energyFromRating(sessionRating),
+      sleep_hours: sleepHours,
+      session_rating: sessionRating,
       notes: notes.trim() || undefined
+    });
+  };
+
+  const adjustSleep = (delta: number) => {
+    setSleepHours(prev => {
+      const next = Math.round((prev + delta) * 2) / 2;
+      return Math.max(3, Math.min(12, next));
     });
   };
 
@@ -1159,64 +1311,110 @@ function FeedbackScreen({
         <h1 className="text-3xl font-extrabold text-white">How was that?</h1>
       </header>
 
-      <div className="glass rounded-3xl p-6 mb-4">
-        <ScorePicker
-          label="Body Soreness going in"
-          icon={<Activity className="w-4 h-4" />}
-          value={soreness}
-          onChange={setSoreness}
-          lowLabel="None"
-          highLabel="Very Sore"
-          color="amber"
-        />
-        <ScorePicker
-          label="Energy Level"
-          icon={<Zap className="w-4 h-4" />}
-          value={energy}
-          onChange={setEnergy}
-          lowLabel="Drained"
-          highLabel="Energised"
-          color="emerald"
-        />
-        <ScorePicker
-          label="Session Rating"
-          icon={<Star className="w-4 h-4" />}
-          value={rating}
-          onChange={setRating}
-          lowLabel="Terrible"
-          highLabel="Amazing"
-          color="violet"
-        />
-
-        <div className="mb-2">
-          <div className="flex items-center gap-2 mb-2">
-            <Moon className="w-4 h-4 text-white/50" />
-            <span className="text-sm font-bold text-white">Sleep Last Night</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              inputMode="decimal"
-              value={sleep}
-              onChange={e => setSleep(e.target.value)}
-              min={0}
-              max={24}
-              step={0.5}
-              className="w-24 glass-input rounded-xl py-2.5 px-3 text-center text-sm font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-            />
-            <span className="text-sm text-white/40 font-medium">hours</span>
+      <div className="space-y-4 mb-6">
+        {/* Input 1: Session feel */}
+        <div className="glass rounded-3xl p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-4">How was the session?</p>
+          <div className="grid grid-cols-3 gap-3">
+            {SESSION_OPTS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSessionRating(opt.value)}
+                className={cn(
+                  "flex flex-col items-center gap-2 py-4 rounded-2xl border font-bold transition-all active:scale-[0.96]",
+                  sessionRating === opt.value
+                    ? "bg-violet-600 border-violet-500 text-white shadow-lg shadow-violet-600/25"
+                    : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:border-white/20"
+                )}
+              >
+                <span className="text-2xl leading-none">{opt.emoji}</span>
+                <span className="text-sm">{opt.label}</span>
+              </button>
+            ))}
           </div>
         </div>
-      </div>
 
-      <div className="glass rounded-3xl p-4 mb-6">
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Any notes? (optional — pain, PRs, conditions...)"
-          rows={2}
-          className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/25 focus:outline-none resize-none"
-        />
+        {/* Input 2: Body feel */}
+        <div className="glass rounded-3xl p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-4">How's your body?</p>
+          <div className="flex gap-2">
+            {BODY_OPTS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setBodyScore(opt.value)}
+                className={cn(
+                  "flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all active:scale-[0.96]",
+                  bodyScore === opt.value
+                    ? "bg-emerald-600 border-emerald-500 text-white"
+                    : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:border-white/20"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Input 3: Sleep stepper */}
+        <div className="glass rounded-3xl p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Moon className="w-4 h-4 text-white/50" />
+              <p className="text-xs font-bold uppercase tracking-widest text-white/40">Sleep last night</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => adjustSleep(-0.5)}
+                className="w-9 h-9 rounded-xl bg-white/10 text-white/60 hover:bg-white/20 hover:text-white flex items-center justify-center transition-all active:scale-90 font-black text-lg"
+              >
+                −
+              </button>
+              <span className="text-xl font-black text-white w-14 text-center tabular-nums">
+                {sleepHours % 1 === 0 ? `${sleepHours}h` : `${sleepHours}h`}
+              </span>
+              <button
+                onClick={() => adjustSleep(0.5)}
+                className="w-9 h-9 rounded-xl bg-white/10 text-white/60 hover:bg-white/20 hover:text-white flex items-center justify-center transition-all active:scale-90 font-black text-lg"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Optional note */}
+        <div className="glass rounded-3xl overflow-hidden">
+          <button
+            onClick={() => setNoteOpen(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-white/40 hover:text-white/60 transition-colors"
+          >
+            <span>Add a note (optional)</span>
+            <motion.div animate={{ rotate: noteOpen ? 180 : 0 }} transition={{ duration: 0.15 }}>
+              <ChevronDown className="w-4 h-4" />
+            </motion.div>
+          </button>
+          <AnimatePresence>
+            {noteOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="px-5 pb-4 border-t border-white/5">
+                  <textarea
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder="Pain, PRs, conditions, anything else..."
+                    rows={3}
+                    autoFocus
+                    className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/25 focus:outline-none resize-none mt-3"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       <div className="flex gap-3">
