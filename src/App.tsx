@@ -38,6 +38,7 @@ import { Programme, Session, Exercise, SetEntry, SessionProgress } from './types
 import {
   evaluateSession,
   getRecommendedWeights,
+  getPerSetWeights,
   computeFatigueScore,
   loadCoachingState,
   saveCoachingState,
@@ -155,7 +156,7 @@ export default function App() {
   const [coachingState, setCoachingState] = useState<CoachingState>(() => loadCoachingState());
   const [pendingFeedback, setPendingFeedback] = useState<PostSessionFeedback | null>(null);
   const [currentEvaluation, setCurrentEvaluation] = useState<SessionEvaluation | null>(null);
-  const [recommendedWeights, setRecommendedWeights] = useState<Record<string, number | null>>({});
+  const [recommendedWeights, setRecommendedWeights] = useState<Record<string, (number | null)[]>>({});
 
   // Synergist suggestion state
   const [synergistSuggestion, setSynergistSuggestion] = useState<SynergistSuggestion | null>(null);
@@ -339,17 +340,20 @@ export default function App() {
       setSkipped({});
       setElapsed(0);
 
-      // Compute ghost weights for all weighted exercises
-      const ghosts: Record<string, number | null> = {};
+      // Compute per-set ghost weights for all weighted exercises
+      const ghosts: Record<string, (number | null)[]> = {};
       const coaching = loadCoachingState();
       exercises.forEach(ex => {
         if (ex.type === 'weight') {
-          ghosts[ex.name] = getRecommendedWeights(
-            ex.name,
-            ex,
-            historyData,
-            coaching.acceptedAdjustments
+          const topWeight = getRecommendedWeights(
+            ex.name, ex, historyData, coaching.acceptedAdjustments
           );
+          const numSets = ex.sets || 3;
+          if (topWeight !== null && topWeight > 0) {
+            ghosts[ex.name] = getPerSetWeights(topWeight, numSets, key, ex);
+          } else {
+            ghosts[ex.name] = Array(numSets).fill(null);
+          }
         }
       });
       setRecommendedWeights(ghosts);
@@ -1154,7 +1158,7 @@ export default function App() {
                   exercise={ex}
                   sets={setData[idx] || []}
                   isSkipped={skipped[idx]}
-                  ghostWeight={recommendedWeights[ex.name] ?? null}
+                  ghostWeights={recommendedWeights[ex.name] ?? []}
                   rpe={exerciseRpe[idx] ?? 7}
                   lastSession={lastSessionByEx[idx] ?? null}
                   sparklineData={sparklinesByEx[idx] ?? []}
@@ -1443,7 +1447,7 @@ function ExerciseCard({
   exercise,
   sets,
   isSkipped,
-  ghostWeight,
+  ghostWeights,
   rpe,
   lastSession,
   sparklineData,
@@ -1458,7 +1462,7 @@ function ExerciseCard({
   exercise: Exercise;
   sets: SetEntry[];
   isSkipped: boolean;
-  ghostWeight: number | null;
+  ghostWeights: (number | null)[];
   rpe: number;
   lastSession: { weight: number; reps: number } | null;
   sparklineData: number[];
@@ -1481,10 +1485,6 @@ function ExerciseCard({
   const beatDelta = lastSession && bestCurrentWeight > 0 && lastSession.weight > 0
     ? bestCurrentWeight - lastSession.weight
     : null;
-
-  const weightPlaceholder = ghostWeight !== null && ghostWeight > 0
-    ? String(ghostWeight)
-    : 'kg';
 
   return (
     <motion.div
@@ -1583,12 +1583,12 @@ function ExerciseCard({
                   <input
                     type="number"
                     inputMode="decimal"
-                    placeholder={weightPlaceholder}
+                    placeholder={ghostWeights[si] != null && ghostWeights[si]! > 0 ? String(ghostWeights[si]) : 'kg'}
                     value={set.weight}
                     onChange={(e) => onUpdateSet(si, 'weight', e.target.value)}
                     className={cn(
                       "w-full glass-input rounded-xl py-2 px-1 text-center text-sm font-bold text-white focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all",
-                      ghostWeight !== null && ghostWeight > 0 && set.weight === ''
+                      ghostWeights[si] != null && ghostWeights[si]! > 0 && set.weight === ''
                         ? "placeholder:text-emerald-400/50"
                         : "placeholder:text-white/20"
                     )}
@@ -1606,7 +1606,7 @@ function ExerciseCard({
                     placeholder="note"
                     value={set.note}
                     onChange={(e) => onUpdateSet(si, 'note', e.target.value)}
-                    className="bg-transparent border-none text-xs text-white/40 placeholder:text-white/15 focus:outline-none focus:text-white/70"
+                    className="w-full glass-input rounded-xl py-2 px-2 text-xs text-white/60 placeholder:text-white/15 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
                   />
                 </div>
               ))}

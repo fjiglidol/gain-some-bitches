@@ -344,6 +344,43 @@ export function getRecommendedWeights(
 }
 
 /**
+ * Compute per-set ghost weights based on session type and exercise classification.
+ * - Heavy day compounds: Reverse Pyramid (top set, then -5% per back-off)
+ * - Everything else: Straight sets (same weight each set)
+ */
+export function getPerSetWeights(
+  topWeight: number,
+  numSets: number,
+  sessionKey: string,
+  exercise: Exercise
+): number[] {
+  const isHeavyDay = sessionKey === 'push_a' || sessionKey === 'pull_a';
+  const isLegsCompound = sessionKey === 'legs_core' && isCompoundExercise(exercise.name);
+  const useRPT = (isHeavyDay || isLegsCompound) && isCompoundExercise(exercise.name);
+
+  if (!useRPT || numSets <= 1) {
+    return Array(numSets).fill(topWeight);
+  }
+
+  // RPT: set 1 = top weight, each subsequent drops ~5%
+  return Array.from({ length: numSets }, (_, i) => {
+    if (i === 0) return topWeight;
+    return roundToNearest2_5(topWeight * (1 - 0.05 * i));
+  });
+}
+
+function isCompoundExercise(name: string): boolean {
+  const n = name.toLowerCase();
+  const compounds = [
+    'bench press', 'squat', 'deadlift', 'rdl', 'romanian deadlift',
+    'overhead press', 'ohp', 'military press', 'barbell row',
+    'bent over row', 'hip thrust', 'incline press', 'incline dumbbell',
+    'pull up', 'chin up', 'dip',
+  ];
+  return compounds.some(c => n.includes(c));
+}
+
+/**
  * Compute fatigue level from recent feedback.
  */
 export function computeFatigueScore(recentFeedback: PostSessionFeedback[]): FatigueLevel {
