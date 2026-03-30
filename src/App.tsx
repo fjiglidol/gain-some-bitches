@@ -26,7 +26,8 @@ import {
   TrendingDown,
   Minus,
   Moon,
-  CloudUpload
+  CloudUpload,
+  Shuffle
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -44,6 +45,11 @@ import {
   SessionEvaluation,
   CoachingState,
 } from './coachingEngine';
+import {
+  exerciseRegistry,
+  getSynergistSuggestion,
+  type SynergistSuggestion,
+} from './data/exerciseRegistry';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -146,6 +152,10 @@ export default function App() {
   const [currentEvaluation, setCurrentEvaluation] = useState<SessionEvaluation | null>(null);
   const [recommendedWeights, setRecommendedWeights] = useState<Record<string, number | null>>({});
 
+  // Synergist suggestion state
+  const [synergistSuggestion, setSynergistSuggestion] = useState<SynergistSuggestion | null>(null);
+  const [suggestionHidden, setSuggestionHidden] = useState(false);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const restTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -218,6 +228,20 @@ export default function App() {
       if (restTimerRef.current) clearInterval(restTimerRef.current);
     };
   }, [restTimer.active, restTimer.remaining]);
+
+  // Generate synergist suggestion whenever rest timer starts
+  useEffect(() => {
+    if (restTimer.active && currentSessionKey) {
+      const suggestion = getSynergistSuggestion(
+        currentSessionKey,
+        historyData,
+        exerciseRegistry
+      );
+      setSynergistSuggestion(suggestion);
+      setSuggestionHidden(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restTimer.active]);
 
   const saveProgress = (key: string, data: typeof setData, skip: typeof skipped, time: number) => {
     const progress: SessionProgress = {
@@ -1042,9 +1066,9 @@ export default function App() {
             className="fixed inset-0 z-50 glass-overlay flex flex-col items-center justify-center p-8"
           >
             <span className="text-xs font-bold uppercase tracking-widest text-violet-400 mb-2">Rest Period</span>
-            <h3 className="text-xl font-bold text-white mb-12 text-center">{restTimer.exName}</h3>
+            <h3 className="text-xl font-bold text-white mb-8 text-center">{restTimer.exName}</h3>
 
-            <div className="relative w-64 h-64 mb-12">
+            <div className="relative w-48 h-48 mb-6">
               <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
                 <circle
                   cx="50" cy="50" r="45"
@@ -1062,25 +1086,71 @@ export default function App() {
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-6xl font-black tabular-nums text-white">{restTimer.remaining}</span>
+                <span className="text-5xl font-black tabular-nums text-white">{restTimer.remaining}</span>
                 <span className="text-xs font-bold text-white/40 uppercase tracking-tighter">Seconds</span>
               </div>
             </div>
 
-            <div className="flex gap-4 w-full max-w-xs">
+            <div className="flex gap-4 w-full max-w-xs mb-6">
               <button
                 onClick={() => setRestTimer(prev => ({ ...prev, active: false }))}
-                className="flex-1 glass text-white/70 font-bold py-4 rounded-2xl hover:bg-white/15 transition-all"
+                className="flex-1 glass text-white/70 font-bold py-3 rounded-2xl hover:bg-white/15 transition-all"
               >
                 Skip
               </button>
               <button
                 onClick={() => setRestTimer(prev => ({ ...prev, remaining: prev.remaining + 30, total: prev.total + 30 }))}
-                className="flex-1 bg-violet-600 text-white font-bold py-4 rounded-2xl hover:bg-violet-500 transition-all"
+                className="flex-1 bg-violet-600 text-white font-bold py-3 rounded-2xl hover:bg-violet-500 transition-all"
               >
                 +30s
               </button>
             </div>
+
+            {/* Synergist suggestion */}
+            {synergistSuggestion && !suggestionHidden && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="w-full max-w-xs rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-pink-400">While you wait</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (currentSessionKey) {
+                          const next = getSynergistSuggestion(
+                            currentSessionKey,
+                            historyData,
+                            exerciseRegistry,
+                            synergistSuggestion.exercise.name
+                          );
+                          setSynergistSuggestion(next);
+                        }
+                      }}
+                      className="text-white/40 hover:text-white/80 transition-colors p-1"
+                      title="Shuffle"
+                    >
+                      <Shuffle className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setSuggestionHidden(true)}
+                      className="text-white/30 hover:text-white/60 transition-colors p-1"
+                      title="Dismiss"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2 mb-1">
+                  <span className="text-sm font-bold text-white capitalize">{synergistSuggestion.muscleGroup}</span>
+                  <span className="text-[10px] text-white/35">last trained: {synergistSuggestion.lastTrainedLabel}</span>
+                </div>
+                <p className="text-xs text-white/70 leading-snug capitalize">{synergistSuggestion.exercise.name}</p>
+                <span className="mt-1 inline-block text-[10px] text-white/30 capitalize">{synergistSuggestion.exercise.equipment}</span>
+              </motion.div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
