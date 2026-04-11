@@ -176,6 +176,15 @@ export default function App() {
   const [milestoneAlert, setMilestoneAlert] = useState<MilestoneAlert | null>(null);
   const [milestoneAlertDismissed, setMilestoneAlertDismissed] = useState(false);
 
+  // Undo quit — restorable session backup
+  const [undoSession, setUndoSession] = useState<SessionProgress | null>(() => {
+    try {
+      const saved = localStorage.getItem('liftoff_session_undo');
+      if (saved) return JSON.parse(saved) as SessionProgress;
+    } catch {}
+    return null;
+  });
+
   // Rest timer coaching cue
   const [showCoachingCue, setShowCoachingCue] = useState(false);
   const [coachingCueText, setCoachingCueText] = useState('');
@@ -824,6 +833,65 @@ export default function App() {
               <p className="text-2xl font-bold text-white">{format(new Date(), 'EEEE, MMMM do')}</p>
             </header>
 
+            {/* Restore session banner */}
+            <AnimatePresence>
+              {undoSession && (() => {
+                const undoSessionInfo = programme.sessions[undoSession.sessionKey];
+                const minsAgo = Math.round((Date.now() - undoSession.savedAt) / 60000);
+                const timeLabel = minsAgo < 1 ? 'just now' : `${minsAgo}m ago`;
+                const loggedCount = (Object.values(undoSession.setData) as SetEntry[][]).reduce(
+                  (acc, sets) => acc + sets.filter(s => s.logged).length, 0
+                );
+                return (
+                  <motion.div
+                    key="undo-banner"
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="mb-4 glass rounded-2xl px-4 py-3 border border-amber-500/25 bg-amber-500/5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center shrink-0">
+                        <RotateCcw className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-bold text-white/80 leading-snug">
+                          Session ended early
+                        </p>
+                        <p className="text-[11px] text-white/40 leading-snug truncate">
+                          {undoSessionInfo?.label?.split(' — ')[1] || undoSession.sessionKey} · {loggedCount} set{loggedCount !== 1 ? 's' : ''} logged · {timeLabel}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <motion.button
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            // Restore backup → liftoff_session, then resume
+                            localStorage.setItem('liftoff_session', JSON.stringify(undoSession));
+                            localStorage.removeItem('liftoff_session_undo');
+                            setUndoSession(null);
+                            startSession(undoSession.sessionKey, true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold transition-all"
+                        >
+                          Restore
+                        </motion.button>
+                        <button
+                          onClick={() => {
+                            localStorage.removeItem('liftoff_session_undo');
+                            setUndoSession(null);
+                          }}
+                          className="p-1 text-white/30 hover:text-white/60 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
+
             {/* Weekly completion dots */}
             <motion.div
               initial={{ opacity: 0, y: 6 }}
@@ -1226,8 +1294,18 @@ export default function App() {
                 <button
                   onClick={() => {
                     setIsTimerRunning(false);
-                    setScreen('select');
+                    // Save backup before clearing so the user can restore
+                    const backup: SessionProgress = {
+                      sessionKey: currentSessionKey!,
+                      setData,
+                      skipped,
+                      elapsed,
+                      savedAt: Date.now(),
+                    };
+                    localStorage.setItem('liftoff_session_undo', JSON.stringify(backup));
+                    setUndoSession(backup);
                     localStorage.removeItem('liftoff_session');
+                    setScreen('select');
                   }}
                   className="flex-1 glass text-white/60 font-bold py-4 rounded-2xl hover:bg-white/15 transition-all active:scale-[0.98]"
                 >
