@@ -69,13 +69,13 @@ export function updateRepCounter(
   c.progress = range > 0 ? Math.min(1, Math.max(0, (hi - angle) / range)) : 0;
 
   if (c.phase === 'idle' || c.phase === 'concentric') {
-    if (angle < lo + 15) {
-      c.phase = 'eccentric'; // reached bottom
+    if (angle < lo + REP_PHASE_TRANSITION_BUFFER_DEG) {
+      c.phase = 'eccentric'; // reached contracted position
     }
   } else if (c.phase === 'eccentric') {
-    if (angle > hi - 15) {
+    if (angle > hi - REP_PHASE_TRANSITION_BUFFER_DEG) {
       c.reps += 1;
-      c.phase = 'concentric'; // returned to top → rep counted
+      c.phase = 'concentric'; // returned to extended position → rep counted
     }
   }
   return c;
@@ -85,6 +85,35 @@ export function newRepCounter(): RepCounter {
   return { reps: 0, phase: 'idle', angle: 0, progress: 0 };
 }
 
+// ─── Form Check Thresholds ───────────────────────────────────────────────────
+
+/** Minimum landmark visibility (0–1) required before a form check is run */
+const MIN_LANDMARK_VISIBILITY = 0.5;
+
+/**
+ * Max elbow forward drift relative to torso width before a correction cue fires.
+ * 0 = elbow perfectly over hip; 1 = elbow one full torso-width in front.
+ */
+const ELBOW_FORWARD_DRIFT_MAX = 0.35;
+
+/** Body sway detection: if the shoulder y-offset from hip exceeds this, flag swing */
+const BODY_SWAY_Y_THRESHOLD = -0.05;
+
+/** Elbow height below shoulder (normalised y) before a "drive elbows down" cue fires */
+const ELBOW_DROP_FROM_SHOULDER = 0.02;
+
+/** Wrist spread must exceed elbow spread by at least this to confirm external rotation */
+const EXTERNAL_ROTATION_SPREAD_MIN = 0.05;
+
+/** For rear-delt fly: elbows more than this below shoulder → cue to raise them */
+const REAR_DELT_ELBOW_SAG_MAX = 0.08;
+
+/** For face pull: elbows more than this below shoulder → cue to raise them */
+const FACE_PULL_ELBOW_SAG_MAX = 0.03;
+
+/** Angle buffer around phase transition points (degrees) — prevents rapid toggling */
+const REP_PHASE_TRANSITION_BUFFER_DEG = 15;
+
 // ─── Form Checks ─────────────────────────────────────────────────────────────
 
 export interface FormCue {
@@ -92,7 +121,7 @@ export interface FormCue {
   message: string;
 }
 
-/** Choose the side with better visibility, or average both */
+/** Choose the side with better visibility */
 function bestSide(pose: Pose, leftIdx: number, rightIdx: number): Landmark {
   const l = pose[leftIdx], r = pose[rightIdx];
   return l.visibility >= r.visibility ? l : r;
@@ -100,7 +129,7 @@ function bestSide(pose: Pose, leftIdx: number, rightIdx: number): Landmark {
 
 /**
  * Returns form cues for the given exercise using the current pose.
- * Returns [] if confidence is too low.
+ * Returns [] if landmark confidence is too low.
  */
 export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
   if (!pose || pose.length < 33) return [];
@@ -110,7 +139,6 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
   const lWrist = pose[15], rWrist = pose[16];
   const lHip = pose[23], rHip = pose[24];
 
-  const minConfidence = 0.5;
   const cues: FormCue[] = [];
 
   const name = exerciseName.toLowerCase();
@@ -120,29 +148,23 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
     const elbow = bestSide(pose, 13, 14);
     const shoulder = bestSide(pose, 11, 12);
     const wrist = bestSide(pose, 15, 16);
-    if (elbow.visibility < minConfidence) return [];
+    if (elbow.visibility < MIN_LANDMARK_VISIBILITY) return [];
 
-    // Elbow drift: elbow should stay close to hip line
+    // Elbow drift: elbow should stay close to the hip line during the curl
     const hipX = (lHip.x + rHip.x) / 2;
     const shoulderX = (lShoulder.x + rShoulder.x) / 2;
     const torsoWidth = Math.abs(shoulderX - hipX) + 0.001;
-    const elbowDrift = Math.abs(elbow.x - hipX) / torsoWidth;
+    const elbowForwardDrift = Math.abs(elbow.x - hipX) / torsoWidth;
 
-    if (elbowDrift > 0.35) {
+    if (elbowForwardDrift > ELBOW_FORWARD_DRIFT_MAX) {
       cues.push({ severity: 'warn', message: 'Keep elbow pinned — it\'s drifting forward' });
     } else {
       cues.push({ severity: 'ok', message: 'Elbow position good' });
     }
 
-    // Wrist alignment (no excessive curling)
-    const elbowAngle = jointAngle(shoulder, elbow, wrist);
-    if (elbowAngle < 40) {
-      cues.push({ severity: 'warn', message: 'Full squeeze at top, then lower with control' });
-    }
-
-    // Body sway check: shoulder should stay roughly above hip
+    // Body sway: shoulder should stay well above hip (not leaning back for momentum)
     const shoulderHipOffsetY = lShoulder.y - lHip.y;
-    if (shoulderHipOffsetY > -0.05) {
+    if (shoulderHipOffsetY > BODY_SWAY_Y_THRESHOLD) {
       cues.push({ severity: 'warn', message: 'Reduce body swing — brace your core' });
     }
 
@@ -154,7 +176,7 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
     const shoulder = bestSide(pose, 11, 12);
     const elbow = bestSide(pose, 13, 14);
     const wrist = bestSide(pose, 15, 16);
-    if (shoulder.visibility < minConfidence || elbow.visibility < minConfidence) return [];
+    if (shoulder.visibility < MIN_LANDMARK_VISIBILITY || elbow.visibility < MIN_LANDMARK_VISIBILITY) return [];
 
     // Back lean: mid-shoulder vs mid-hip angle from vertical
     const midShoulder = mid(lShoulder, rShoulder);
@@ -172,7 +194,7 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
 
     // Elbow path: elbows should drive down/back, not flare wide
     const elbowAngle = jointAngle(shoulder, elbow, wrist);
-    if (elbowAngle > 150 && shoulder.y - elbow.y < 0.02) {
+    if (elbowAngle > 150 && shoulder.y - elbow.y < ELBOW_DROP_FROM_SHOULDER) {
       cues.push({ severity: 'warn', message: 'Drive elbows down toward hips, not back' });
     }
 
@@ -183,14 +205,14 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
   if (name.includes('face pull')) {
     const lEl = pose[13], rEl = pose[14];
     const lSh = pose[11], rSh = pose[12];
-    if (lEl.visibility < minConfidence || rEl.visibility < minConfidence) return [];
+    if (lEl.visibility < MIN_LANDMARK_VISIBILITY || rEl.visibility < MIN_LANDMARK_VISIBILITY) return [];
 
     // Elbows should be at or above shoulder height
     const elbowAvgY = (lEl.y + rEl.y) / 2;
     const shoulderAvgY = (lSh.y + rSh.y) / 2;
 
     // In normalised coords y increases downward, so lower y = higher up
-    if (elbowAvgY > shoulderAvgY + 0.03) {
+    if (elbowAvgY > shoulderAvgY + FACE_PULL_ELBOW_SAG_MAX) {
       cues.push({ severity: 'warn', message: 'Raise elbows to shoulder height or above' });
     } else {
       cues.push({ severity: 'ok', message: 'Elbow height good' });
@@ -199,7 +221,7 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
     // Wrist position: wrists should be outside elbows (external rotation)
     const wristSpread = Math.abs(lWrist.x - rWrist.x);
     const elbowSpread = Math.abs(lElbow.x - rElbow.x);
-    if (wristSpread < elbowSpread - 0.05) {
+    if (wristSpread < elbowSpread - EXTERNAL_ROTATION_SPREAD_MIN) {
       cues.push({ severity: 'warn', message: 'Rotate hands out — thumbs back' });
     } else {
       cues.push({ severity: 'ok', message: 'External rotation good' });
@@ -212,12 +234,12 @@ export function analyzeForm(pose: Pose, exerciseName: string): FormCue[] {
   if (name.includes('rear delt') || name.includes('fly')) {
     const lEl = pose[13], rEl = pose[14];
     const lSh = pose[11], rSh = pose[12];
-    if (lEl.visibility < minConfidence) return [];
+    if (lEl.visibility < MIN_LANDMARK_VISIBILITY) return [];
 
     const elbowAvgY = (lEl.y + rEl.y) / 2;
     const shoulderAvgY = (lSh.y + rSh.y) / 2;
 
-    if (elbowAvgY > shoulderAvgY + 0.08) {
+    if (elbowAvgY > shoulderAvgY + REAR_DELT_ELBOW_SAG_MAX) {
       cues.push({ severity: 'warn', message: 'Keep elbows parallel to the floor' });
     } else {
       cues.push({ severity: 'ok', message: 'Elbow level good' });

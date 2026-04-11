@@ -10,7 +10,6 @@ export interface Exercise {
   superset_group?: string;
   rpe?: string | number;
   progression?: string;
-  _origIdx?: number;
 }
 
 export interface PostWorkoutCardio {
@@ -107,8 +106,8 @@ export interface SetEntry {
 
 export interface SessionProgress {
   sessionKey: string;
-  setData: { [exIdx: number]: SetEntry[] };
-  skipped: { [exIdx: number]: boolean };
+  workoutSets: { [exerciseIndex: number]: SetEntry[] };
+  skipped: { [exerciseIndex: number]: boolean };
   elapsed: number;
   savedAt: number;
 }

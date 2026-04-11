@@ -151,7 +151,7 @@ function isRestDay(session: Session): boolean {
 export default function App() {
   const [screen, setScreen] = useState<'select' | 'workout' | 'feedback' | 'report'>('select');
   const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null);
-  const [setData, setSetData] = useState<{ [exIdx: number]: SetEntry[] }>({});
+  const [workoutSets, setWorkoutSets] = useState<{ [exIdx: number]: SetEntry[] }>({});
   const [skipped, setSkipped] = useState<{ [exIdx: number]: boolean }>({});
   const [elapsed, setElapsed] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -177,14 +177,14 @@ export default function App() {
   const [suggestionHidden, setSuggestionHidden] = useState(false);
 
   // PR detection state
-  const [prMap, setPrMap] = useState<Record<string, PRRecord>>({});
+  const [personalRecords, setPrMap] = useState<Record<string, PRRecord>>({});
   const [newPRBanner, setNewPRBanner] = useState<{ exercise: string; weight: number; oldPR: number } | null>(null);
 
   // Last-session data per exercise (keyed by exercise index)
-  const [lastSessionByEx, setLastSessionByEx] = useState<Record<number, { weight: number; reps: number } | null>>({});
+  const [lastSessionByExerciseIndex, setLastSessionByEx] = useState<Record<number, { weight: number; reps: number } | null>>({});
 
   // Sparkline data per exercise (keyed by exercise index)
-  const [sparklinesByEx, setSparklinesByEx] = useState<Record<number, number[]>>({});
+  const [strengthTrendByExerciseIndex, setSparklinesByEx] = useState<Record<number, number[]>>({});
 
   // Milestone alert
   const [milestoneAlert, setMilestoneAlert] = useState<MilestoneAlert | null>(null);
@@ -202,7 +202,7 @@ export default function App() {
   // Undo quit — restorable session backup
   const [undoSession, setUndoSession] = useState<SessionProgress | null>(() => {
     try {
-      const saved = localStorage.getItem('liftoff_session_undo');
+      const saved = localStorage.getItem('gsb_session_undo');
       if (saved) return JSON.parse(saved) as SessionProgress;
     } catch {}
     return null;
@@ -239,7 +239,7 @@ export default function App() {
 
   // Load saved session on mount
   useEffect(() => {
-    const saved = localStorage.getItem('liftoff_session');
+    const saved = localStorage.getItem('gsb_active_session');
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as SessionProgress;
@@ -304,19 +304,19 @@ export default function App() {
 
       // Pre-compute coaching cue for when timer hits 0
       const exName = restTimer.exName;
-      const lastData = Object.values(lastSessionByEx).find((_, i) => {
+      const lastData = Object.values(lastSessionByExerciseIndex).find((_, i) => {
         // find by matching exName to current exercises
         if (!currentSessionKey) return false;
         const exercises = getSessionExercises(programme.sessions[currentSessionKey]);
         return exercises[i]?.name === exName || normaliseExerciseName(exercises[i]?.name ?? '') === normaliseExerciseName(exName);
       });
-      // Look up from lastSessionByEx by exercise name
+      // Look up from lastSessionByExerciseIndex by exercise name
       if (currentSessionKey) {
         const exercises = getSessionExercises(programme.sessions[currentSessionKey]);
         const exIdx = exercises.findIndex(e =>
           normaliseExerciseName(e.name) === normaliseExerciseName(exName)
         );
-        const last = exIdx >= 0 ? lastSessionByEx[exIdx] : null;
+        const last = exIdx >= 0 ? lastSessionByExerciseIndex[exIdx] : null;
         if (last && last.weight > 0) {
           setCoachingCueText(`Last time: ${last.weight}kg × ${last.reps}. Go.`);
         } else {
@@ -327,15 +327,15 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restTimer.active]);
 
-  const saveProgress = (key: string, data: typeof setData, skip: typeof skipped, time: number) => {
+  const saveProgress = (key: string, data: typeof workoutSets, skip: typeof skipped, time: number) => {
     const progress: SessionProgress = {
       sessionKey: key,
-      setData: data,
+      workoutSets: data,
       skipped: skip,
       elapsed: time,
       savedAt: Date.now()
     };
-    localStorage.setItem('liftoff_session', JSON.stringify(progress));
+    localStorage.setItem('gsb_active_session', JSON.stringify(progress));
   };
 
   const startSession = (key: string, resume = false) => {
@@ -343,21 +343,21 @@ export default function App() {
     if (!session) return;
 
     if (resume) {
-      const saved = localStorage.getItem('liftoff_session');
+      const saved = localStorage.getItem('gsb_active_session');
       if (saved) {
         const parsed = JSON.parse(saved) as SessionProgress;
         setCurrentSessionKey(parsed.sessionKey);
-        setSetData(parsed.setData);
+        setWorkoutSets(parsed.workoutSets);
         setSkipped(parsed.skipped);
         setElapsed(parsed.elapsed);
       }
     } else {
       setCurrentSessionKey(key);
-      const initialSetData: { [idx: number]: SetEntry[] } = {};
+      const initialWorkoutSets: { [idx: number]: SetEntry[] } = {};
       const initialRpe: { [idx: number]: number } = {};
       const exercises = getSessionExercises(session);
       exercises.forEach((ex, idx) => {
-        initialSetData[idx] = Array.from({ length: ex.sets || 1 }, () => ({
+        initialWorkoutSets[idx] = Array.from({ length: ex.sets || 1 }, () => ({
           weight: '',
           reps: '',
           note: '',
@@ -367,7 +367,7 @@ export default function App() {
           initialRpe[idx] = 7; // default RPE
         }
       });
-      setSetData(initialSetData);
+      setWorkoutSets(initialWorkoutSets);
       setExerciseRpe(initialRpe);
       setSkipped({});
       setElapsed(0);
@@ -487,9 +487,9 @@ export default function App() {
     setLatestPose(null);
   };
 
-  const handleFinish = () => {
+  const completeWorkoutSession = () => {
     setIsTimerRunning(false);
-    localStorage.removeItem('liftoff_session');
+    localStorage.removeItem('gsb_active_session');
     setScreen('feedback');
   };
 
@@ -504,7 +504,7 @@ export default function App() {
       try {
         const evaluation = evaluateSession(
           currentSessionKey,
-          setData,
+          workoutSets,
           skipped,
           historyData,
           programme,
@@ -561,7 +561,7 @@ export default function App() {
     const lines = [header];
     exercises.forEach((ex, idx) => {
       if (skipped[idx]) return;
-      const sets = setData[idx] || [];
+      const sets = workoutSets[idx] || [];
       const loggedSets = sets.filter(s => s.weight !== '' || s.reps !== '');
       if (loggedSets.length === 0) return;
 
@@ -590,7 +590,7 @@ export default function App() {
     const loggedExercises = exercises
       .map((ex, idx) => {
         if (skipped[idx]) return null;
-        const sets = setData[idx] || [];
+        const sets = workoutSets[idx] || [];
         const logged = sets.filter(s => s.weight !== '' || s.reps !== '');
         if (logged.length === 0) return null;
         return {
@@ -908,7 +908,7 @@ export default function App() {
                 const undoSessionInfo = programme.sessions[undoSession.sessionKey];
                 const minsAgo = Math.round((Date.now() - undoSession.savedAt) / 60000);
                 const timeLabel = minsAgo < 1 ? 'just now' : `${minsAgo}m ago`;
-                const loggedCount = (Object.values(undoSession.setData) as SetEntry[][]).reduce(
+                const loggedCount = (Object.values(undoSession.workoutSets) as SetEntry[][]).reduce(
                   (acc, sets) => acc + sets.filter(s => s.logged).length, 0
                 );
                 return (
@@ -936,8 +936,8 @@ export default function App() {
                           whileTap={{ scale: 0.95 }}
                           onClick={() => {
                             // Restore backup → liftoff_session, then resume
-                            localStorage.setItem('liftoff_session', JSON.stringify(undoSession));
-                            localStorage.removeItem('liftoff_session_undo');
+                            localStorage.setItem('gsb_active_session', JSON.stringify(undoSession));
+                            localStorage.removeItem('gsb_session_undo');
                             setUndoSession(null);
                             startSession(undoSession.sessionKey, true);
                           }}
@@ -947,7 +947,7 @@ export default function App() {
                         </motion.button>
                         <button
                           onClick={() => {
-                            localStorage.removeItem('liftoff_session_undo');
+                            localStorage.removeItem('gsb_session_undo');
                             setUndoSession(null);
                           }}
                           className="p-1 text-white/30 hover:text-white/60 transition-colors"
@@ -1258,7 +1258,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     if (confirm('Exit workout? Progress will be saved.')) {
-                      saveProgress(currentSessionKey, setData, skipped, elapsed);
+                      saveProgress(currentSessionKey, workoutSets, skipped, elapsed);
                       setScreen('select');
                     }
                   }}
@@ -1306,16 +1306,16 @@ export default function App() {
                   key={idx}
                   idx={idx}
                   exercise={ex}
-                  sets={setData[idx] || []}
+                  sets={workoutSets[idx] || []}
                   isSkipped={skipped[idx]}
                   ghostWeights={recommendedWeights[ex.name] ?? []}
                   rpe={exerciseRpe[idx] ?? 7}
-                  lastSession={lastSessionByEx[idx] ?? null}
-                  sparklineData={sparklinesByEx[idx] ?? []}
+                  lastSession={lastSessionByExerciseIndex[idx] ?? null}
+                  sparklineData={strengthTrendByExerciseIndex[idx] ?? []}
                   onUpdateSet={(si, field, val) => {
-                    const newData = { ...setData };
+                    const newData = { ...workoutSets };
                     newData[idx][si] = { ...newData[idx][si], [field]: val };
-                    setSetData(newData);
+                    setWorkoutSets(newData);
                     saveProgress(currentSessionKey, newData, skipped, elapsed);
 
                     // PR detection — only when both weight and reps are filled
@@ -1325,11 +1325,11 @@ export default function App() {
                       const r = parseInt(updatedSet.reps);
                       if (!isNaN(w) && w > 0 && !isNaN(r) && r > 0) {
                         const canonical = normaliseExerciseName(ex.name);
-                        const currentPR = prMap[canonical];
+                        const currentPR = personalRecords[canonical];
                         if (!currentPR || w > currentPR.weight) {
                           const oldWeight = currentPR?.weight ?? 0;
                           setNewPRBanner({ exercise: ex.name, weight: w, oldPR: oldWeight });
-                          // Update prMap so it doesn't re-fire for same exercise this session
+                          // Update personalRecords so it doesn't re-fire for same exercise this session
                           setPrMap(prev => ({
                             ...prev,
                             [canonical]: { weight: w, reps: r, date: new Date().toISOString().split('T')[0] }
@@ -1343,22 +1343,22 @@ export default function App() {
                   onToggleSkip={() => {
                     const newSkipped = { ...skipped, [idx]: !skipped[idx] };
                     setSkipped(newSkipped);
-                    saveProgress(currentSessionKey, setData, newSkipped, elapsed);
+                    saveProgress(currentSessionKey, workoutSets, newSkipped, elapsed);
                   }}
                   onAddSet={() => {
-                    const newData = { ...setData };
+                    const newData = { ...workoutSets };
                     newData[idx].push({ weight: '', reps: '', note: '', logged: false });
-                    setSetData(newData);
+                    setWorkoutSets(newData);
                   }}
                   onAddDropSet={() => {
-                    const newData = { ...setData };
+                    const newData = { ...workoutSets };
                     const currentSets = newData[idx];
                     const lastFilledSet = [...currentSets].reverse().find(s => s.weight !== '');
                     const dropWeight = lastFilledSet
                       ? String(Math.round(parseFloat(lastFilledSet.weight) * 0.8 * 2) / 2)
                       : '';
                     currentSets.push({ weight: dropWeight, reps: '', note: 'drop set', logged: false, isDropSet: true });
-                    setSetData(newData);
+                    setWorkoutSets(newData);
                     saveProgress(currentSessionKey, newData, skipped, elapsed);
                   }}
                   onStartRest={(secs) => {
@@ -1380,14 +1380,14 @@ export default function App() {
                     // Save backup before clearing so the user can restore
                     const backup: SessionProgress = {
                       sessionKey: currentSessionKey!,
-                      setData,
+                      workoutSets,
                       skipped,
                       elapsed,
                       savedAt: Date.now(),
                     };
-                    localStorage.setItem('liftoff_session_undo', JSON.stringify(backup));
+                    localStorage.setItem('gsb_session_undo', JSON.stringify(backup));
                     setUndoSession(backup);
-                    localStorage.removeItem('liftoff_session');
+                    localStorage.removeItem('gsb_active_session');
                     setScreen('select');
                   }}
                   className="flex-1 glass text-white/60 font-bold py-4 rounded-2xl hover:bg-white/15 transition-all active:scale-[0.98]"
@@ -1395,7 +1395,7 @@ export default function App() {
                   Quit Session
                 </button>
                 <button
-                  onClick={handleFinish}
+                  onClick={completeWorkoutSession}
                   className="flex-[2] bg-emerald-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/25 hover:bg-emerald-400 transition-all active:scale-[0.98]"
                 >
                   Finish Workout
@@ -1560,7 +1560,7 @@ export default function App() {
         {screen === 'report' && currentSessionKey && (
           <ReportScreen
             sessionKey={currentSessionKey}
-            setData={setData}
+            workoutSets={workoutSets}
             skipped={skipped}
             elapsed={elapsed}
             evaluation={currentEvaluation}
@@ -2054,10 +2054,10 @@ function FeedbackScreen({
 
   const handleSubmit = () => {
     onSubmit({
-      soreness_score: bodyScore,
-      energy_score: energyFromRating(sessionRating),
-      sleep_hours: sleepHours,
-      session_rating: sessionRating,
+      soreness: bodyScore,
+      energy: energyFromRating(sessionRating),
+      sleepHours: sleepHours,
+      sessionRating: sessionRating,
       notes: notes.trim() || undefined
     });
   };
@@ -2262,7 +2262,7 @@ interface ExerciseScore {
 
 function computeSessionScore(
   sessionKey: string,
-  setData: { [exIdx: number]: SetEntry[] },
+  workoutSets: { [exIdx: number]: SetEntry[] },
   skipped: { [exIdx: number]: boolean },
   exerciseRpe: { [exIdx: number]: number }
 ): { score: number; label: string; exerciseScores: ExerciseScore[] } {
@@ -2277,7 +2277,7 @@ function computeSessionScore(
     if (ex.type !== 'weight') continue;
     if (skipped[idx]) continue;
 
-    const sets = (setData[idx] || []).filter(s => s.weight !== '' && s.reps !== '');
+    const sets = (workoutSets[idx] || []).filter(s => s.weight !== '' && s.reps !== '');
     if (sets.length === 0) continue;
 
     const prescribedReps = parseRepsUpper(ex.reps);
@@ -2378,7 +2378,7 @@ function rpeNote(status: ExerciseScore['status'], rpe: number): string | null {
 
 function ReportScreen({
   sessionKey,
-  setData,
+  workoutSets,
   skipped,
   elapsed,
   evaluation,
@@ -2389,7 +2389,7 @@ function ReportScreen({
   onDone,
 }: {
   sessionKey: string;
-  setData: { [exIdx: number]: SetEntry[] };
+  workoutSets: { [exIdx: number]: SetEntry[] };
   skipped: { [exIdx: number]: boolean };
   elapsed: number;
   evaluation: SessionEvaluation | null;
@@ -2431,7 +2431,7 @@ function ReportScreen({
   });
 
   const { score, label, exerciseScores } = computeSessionScore(
-    sessionKey, setData, skipped, exerciseRpeByIdx
+    sessionKey, workoutSets, skipped, exerciseRpeByIdx
   );
 
   // Enrich exercise scores with prescribed weight from evaluation
@@ -2602,7 +2602,7 @@ function ReportScreen({
           <div className="w-px bg-white/10" />
           <div className="text-center">
             <span className="block text-xl font-black text-white">
-              {Object.values(setData).flat().filter((s: SetEntry) => s.weight !== '' || s.reps !== '').length}
+              {Object.values(workoutSets).flat().filter((s: SetEntry) => s.weight !== '' || s.reps !== '').length}
             </span>
             <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">sets</span>
           </div>

@@ -9,19 +9,15 @@ import { Programme, Session, Exercise, SetEntry } from './types';
 // ─── Public Interfaces ────────────────────────────────────────────────────────
 
 export interface PostSessionFeedback {
-  soreness_score: 1 | 2 | 3 | 4 | 5;
-  energy_score: 1 | 2 | 3 | 4 | 5;
-  sleep_hours: number;
-  session_rating: 1 | 2 | 3 | 4 | 5;
+  /** Muscle soreness: 1 = none, 5 = severe DOMS */
+  soreness: 1 | 2 | 3 | 4 | 5;
+  /** Perceived energy level during session: 1 = exhausted, 5 = peak */
+  energy: 1 | 2 | 3 | 4 | 5;
+  /** Total sleep the night before, in hours */
+  sleepHours: number;
+  /** Subjective session quality: 1 = poor, 5 = excellent */
+  sessionRating: 1 | 2 | 3 | 4 | 5;
   notes?: string;
-}
-
-export interface CompletedSet {
-  weight_kg: number;
-  reps: number;
-  rpe?: number;
-  form_flag?: boolean;
-  pain_flag?: boolean;
 }
 
 export type ExerciseFlag =
@@ -144,6 +140,31 @@ const PROGRAMME_START = new Date('2026-03-25');
 const PROGRAMME_END = new Date('2026-05-20');
 const DELOAD_WEEK = 7;
 const OBSERVATION_WEEKS = 2;
+
+// Progressive overload: minimum weight/rep variance to count as a true stall
+const STALL_WEIGHT_TOLERANCE_KG = 0.1;
+const STALL_REP_TOLERANCE = 0.5;
+
+// Load modifiers applied when adjusting training weight
+const DELOAD_LOAD_MULTIPLIER = 0.80;       // Week 7 deload: drop to 80%
+const PAIN_RESPONSE_LOAD_MULTIPLIER = 0.85; // Pain flag: drop to 85%
+const STALL_RESET_LOAD_MULTIPLIER = 0.90;  // 3-session stall: drop 10% to reset
+const RPE_SPIKE_LOAD_MULTIPLIER = 0.95;    // RPE too high: trim 5%
+
+// Reverse Pyramid Training: each back-off set drops by this fraction of top weight
+const RPT_BACKOFF_RATE = 0.05; // 5% per set
+
+// Fatigue score: weighted composite of soreness, energy, sleep, session quality
+// Higher score = more accumulated fatigue
+const FATIGUE_WEIGHT_SORENESS = 0.35;
+const FATIGUE_WEIGHT_ENERGY   = 0.30;
+const FATIGUE_WEIGHT_SLEEP    = 0.20;
+const FATIGUE_WEIGHT_RATING   = 0.15;
+
+// Fatigue thresholds (0–1 scale)
+const FATIGUE_DELOAD_THRESHOLD      = 0.65; // above → deload recommended
+const FATIGUE_ACCUMULATING_THRESHOLD = 0.45; // above → fatigue accumulating
+const FATIGUE_NORMAL_THRESHOLD      = 0.25; // above → normal training load
 
 // Key lifts and their week-8 targets
 const KEY_LIFT_TARGETS: Record<string, number> = {
@@ -269,7 +290,10 @@ export function detectStall(
   const last3 = exerciseHistory.slice(-3);
   const firstWeight = last3[0].weight;
   const firstReps = last3[0].reps;
-  return last3.every(s => Math.abs(s.weight - firstWeight) < 0.1 && Math.abs(s.reps - firstReps) < 0.5);
+  return last3.every(s =>
+    Math.abs(s.weight - firstWeight) < STALL_WEIGHT_TOLERANCE_KG &&
+    Math.abs(s.reps - firstReps) < STALL_REP_TOLERANCE
+  );
 }
 
 /**
@@ -315,9 +339,9 @@ export function getRecommendedWeights(
   const currentWeight = lastSession.weight;
   if (currentWeight <= 0) return null;
 
-  // Deload: recommend 80% of current
+  // Deload: recommend reduced load
   if (isDeloadWeek()) {
-    return roundToNearest2_5(currentWeight * 0.8);
+    return roundToNearest2_5(currentWeight * DELOAD_LOAD_MULTIPLIER);
   }
 
   // Observation mode: use same weight as last session
@@ -329,9 +353,9 @@ export function getRecommendedWeights(
   const consecutive = countConsecutiveProgressions(exHistory, exercise);
   const stall = detectStall(exHistory);
 
-  // Stall response: drop 10%
+  // Stall response: drop load to reset progressive overload
   if (stall) {
-    return roundToNearest2_5(currentWeight * 0.9);
+    return roundToNearest2_5(currentWeight * STALL_RESET_LOAD_MULTIPLIER);
   }
 
   // Progress: hit reps for 1+ consecutive sessions → increase
@@ -362,10 +386,10 @@ export function getPerSetWeights(
     return Array(numSets).fill(topWeight);
   }
 
-  // RPT: set 1 = top weight, each subsequent drops ~5%
+  // RPT: set 1 = top weight, each subsequent back-off set drops by RPT_BACKOFF_RATE
   return Array.from({ length: numSets }, (_, i) => {
     if (i === 0) return topWeight;
-    return roundToNearest2_5(topWeight * (1 - 0.05 * i));
+    return roundToNearest2_5(topWeight * (1 - RPT_BACKOFF_RATE * i));
   });
 }
 
@@ -387,21 +411,21 @@ export function computeFatigueScore(recentFeedback: PostSessionFeedback[]): Fati
   if (recentFeedback.length === 0) return 'normal';
 
   const last = recentFeedback.slice(-4);
-  const avgSoreness = last.reduce((a, b) => a + b.soreness_score, 0) / last.length;
-  const avgEnergy = last.reduce((a, b) => a + b.energy_score, 0) / last.length;
-  const avgSleep = last.reduce((a, b) => a + b.sleep_hours, 0) / last.length;
-  const avgRating = last.reduce((a, b) => a + b.session_rating, 0) / last.length;
+  const avgSoreness = last.reduce((a, b) => a + b.soreness, 0) / last.length;
+  const avgEnergy   = last.reduce((a, b) => a + b.energy, 0) / last.length;
+  const avgSleep    = last.reduce((a, b) => a + b.sleepHours, 0) / last.length;
+  const avgRating   = last.reduce((a, b) => a + b.sessionRating, 0) / last.length;
 
-  // Score: soreness and low energy push toward fatigue; good sleep and high rating pull toward fresh
+  // Higher soreness and lower energy/sleep/rating → higher fatigue score
   const fatigueScore =
-    (avgSoreness - 1) / 4 * 0.35 +
-    (5 - avgEnergy) / 4 * 0.30 +
-    (8 - Math.min(avgSleep, 8)) / 6 * 0.20 +
-    (3 - avgRating) / 4 * 0.15;
+    (avgSoreness - 1) / 4 * FATIGUE_WEIGHT_SORENESS +
+    (5 - avgEnergy)   / 4 * FATIGUE_WEIGHT_ENERGY +
+    (8 - Math.min(avgSleep, 8)) / 6 * FATIGUE_WEIGHT_SLEEP +
+    (3 - avgRating)   / 4 * FATIGUE_WEIGHT_RATING;
 
-  if (fatigueScore >= 0.65) return 'deload_recommended';
-  if (fatigueScore >= 0.45) return 'accumulating';
-  if (fatigueScore >= 0.25) return 'normal';
+  if (fatigueScore >= FATIGUE_DELOAD_THRESHOLD)      return 'deload_recommended';
+  if (fatigueScore >= FATIGUE_ACCUMULATING_THRESHOLD) return 'accumulating';
+  if (fatigueScore >= FATIGUE_NORMAL_THRESHOLD)      return 'normal';
   return 'fresh';
 }
 
@@ -575,14 +599,14 @@ export function evaluateSession(
     if (deload) {
       // Deload week: suppress progression, recommend volume reduction
       if (avgWeight > 0) {
-        const deloadWeight = roundToNearest2_5(avgWeight * 0.8);
+        const deloadWeight = roundToNearest2_5(avgWeight * DELOAD_LOAD_MULTIPLIER);
         adjustments.push({
           type: 'deload',
           priority: 1,
           exercise_name: ex.name,
           current_value: avgWeight,
           recommended_value: deloadWeight,
-          reason: `Week ${DELOAD_WEEK} deload — drop to 80% across the board`,
+          reason: `Week ${DELOAD_WEEK} deload — drop to ${DELOAD_LOAD_MULTIPLIER * 100}% across the board`,
           evidence: [`Current weight: ${avgWeight}kg`]
         });
         nextSessionWeights[ex.name] = deloadWeight;
@@ -591,7 +615,7 @@ export function evaluateSession(
     }
 
     if (hasPainFlag) {
-      const reducedWeight = roundToNearest2_5(avgWeight * 0.85);
+      const reducedWeight = roundToNearest2_5(avgWeight * PAIN_RESPONSE_LOAD_MULTIPLIER);
       adjustments.push({
         type: 'weight_reduction',
         priority: 1,
@@ -606,7 +630,7 @@ export function evaluateSession(
     }
 
     if (stall && !isObservationMode()) {
-      const deloadedWeight = roundToNearest2_5(avgWeight * 0.9);
+      const deloadedWeight = roundToNearest2_5(avgWeight * STALL_RESET_LOAD_MULTIPLIER);
       adjustments.push({
         type: 'weight_reduction',
         priority: 2,
@@ -621,7 +645,7 @@ export function evaluateSession(
     }
 
     if (rpeDelta > 2 && !isObservationMode()) {
-      const reducedWeight = roundToNearest2_5(avgWeight * 0.95);
+      const reducedWeight = roundToNearest2_5(avgWeight * RPE_SPIKE_LOAD_MULTIPLIER);
       adjustments.push({
         type: 'weight_reduction',
         priority: 2,
@@ -795,7 +819,7 @@ export function computeMilestoneAlert(
  * Load coaching state from localStorage.
  */
 export function loadCoachingState(): CoachingState {
-  const stored = localStorage.getItem('liftoff_coaching');
+  const stored = localStorage.getItem('gsb_coaching_state');
   if (stored) {
     try {
       return JSON.parse(stored) as CoachingState;
@@ -817,5 +841,5 @@ export function loadCoachingState(): CoachingState {
  * Persist coaching state to localStorage.
  */
 export function saveCoachingState(state: CoachingState): void {
-  localStorage.setItem('liftoff_coaching', JSON.stringify(state));
+  localStorage.setItem('gsb_coaching_state', JSON.stringify(state));
 }
