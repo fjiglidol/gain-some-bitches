@@ -27,7 +27,10 @@ import {
   Minus,
   Moon,
   CloudUpload,
-  Shuffle
+  Shuffle,
+  Activity,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -56,6 +59,17 @@ import {
   getSynergistSuggestion,
   type SynergistSuggestion,
 } from './data/exerciseRegistry';
+import {
+  analyzeForm,
+  getRepConfig,
+  getPrimaryAngle,
+  updateRepCounter,
+  newRepCounter,
+  parsePoseFromOSC,
+  type Pose,
+  type RepCounter,
+  type FormCue,
+} from './poseAnalysis';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -175,6 +189,15 @@ export default function App() {
   // Milestone alert
   const [milestoneAlert, setMilestoneAlert] = useState<MilestoneAlert | null>(null);
   const [milestoneAlertDismissed, setMilestoneAlertDismissed] = useState(false);
+
+  // Form check (iKeleton OSC → WebSocket)
+  const [formCheckOpen, setFormCheckOpen] = useState(false);
+  const [formCheckExercise, setFormCheckExercise] = useState<string>('');
+  const [poseWsStatus, setPoseWsStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [latestPose, setLatestPose] = useState<Pose | null>(null);
+  const [repCounter, setRepCounter] = useState<RepCounter>(newRepCounter());
+  const [formCues, setFormCues] = useState<FormCue[]>([]);
+  const poseWsRef = useRef<WebSocket | null>(null);
 
   // Undo quit — restorable session backup
   const [undoSession, setUndoSession] = useState<SessionProgress | null>(() => {
@@ -416,6 +439,52 @@ export default function App() {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const openFormCheck = (exerciseName: string) => {
+    setFormCheckExercise(exerciseName);
+    setRepCounter(newRepCounter());
+    setFormCues([]);
+    setFormCheckOpen(true);
+    if (poseWsRef.current) poseWsRef.current.close();
+
+    const wsUrl = `ws://${window.location.hostname}:3001/pose-ws`;
+    setPoseWsStatus('connecting');
+    const ws = new window.WebSocket(wsUrl);
+    poseWsRef.current = ws;
+
+    ws.onopen = () => setPoseWsStatus('connected');
+    ws.onclose = () => {
+      setPoseWsStatus('disconnected');
+      if (poseWsRef.current === ws) poseWsRef.current = null;
+    };
+    ws.onerror = () => setPoseWsStatus('disconnected');
+    ws.onmessage = (evt) => {
+      try {
+        const { args } = JSON.parse(evt.data) as { address: string; args: number[] };
+        const pose = parsePoseFromOSC(args);
+        if (!pose) return;
+        setLatestPose(pose);
+        setFormCues(analyzeForm(pose, exerciseName));
+        const cfg = getRepConfig(exerciseName);
+        if (cfg) {
+          const angle = getPrimaryAngle(pose, cfg);
+          if (angle !== null) {
+            setRepCounter(prev => updateRepCounter(prev, angle, cfg.hi, cfg.lo));
+          }
+        }
+      } catch {}
+    };
+  };
+
+  const closeFormCheck = () => {
+    setFormCheckOpen(false);
+    if (poseWsRef.current) {
+      poseWsRef.current.close();
+      poseWsRef.current = null;
+    }
+    setPoseWsStatus('disconnected');
+    setLatestPose(null);
   };
 
   const handleFinish = () => {
@@ -1209,12 +1278,25 @@ export default function App() {
                     <span className="text-lg font-bold tabular-nums text-white/80">{formatTime(elapsed)}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setIsTimerRunning(!isTimerRunning)}
-                  className="p-2 -mr-2 text-white/50 hover:text-white transition-colors"
-                >
-                  {isTimerRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const exercises = getSessionExercises(programme.sessions[currentSessionKey]);
+                      const firstWeighted = exercises.find(e => e.type === 'weight');
+                      openFormCheck(firstWeighted?.name ?? exercises[0]?.name ?? '');
+                    }}
+                    className="p-2 text-white/50 hover:text-violet-400 transition-colors"
+                    title="Form Check"
+                  >
+                    <Activity className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setIsTimerRunning(!isTimerRunning)}
+                    className="p-2 -mr-2 text-white/50 hover:text-white transition-colors"
+                  >
+                    {isTimerRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
             </header>
 
@@ -1285,6 +1367,7 @@ export default function App() {
                   onRpeChange={(val) => {
                     setExerciseRpe(prev => ({ ...prev, [idx]: val }));
                   }}
+                  onFormCheck={() => openFormCheck(ex.name)}
                 />
               ))}
             </main>
@@ -1319,6 +1402,151 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {/* ── Form Check overlay ────────────────────────────────────────── */}
+            <AnimatePresence>
+              {formCheckOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 60 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 60 }}
+                  className="fixed inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-md"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-5 pt-safe-top py-4 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-violet-400" />
+                      <span className="text-sm font-bold text-white">Form Check</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {/* Connection badge */}
+                      <div className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                        poseWsStatus === 'connected'
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : poseWsStatus === 'connecting'
+                          ? "bg-amber-500/15 text-amber-400"
+                          : "bg-white/10 text-white/40"
+                      )}>
+                        {poseWsStatus === 'connected'
+                          ? <><Wifi className="w-3 h-3" />Live</>
+                          : poseWsStatus === 'connecting'
+                          ? <><Wifi className="w-3 h-3 animate-pulse" />Connecting</>
+                          : <><WifiOff className="w-3 h-3" />No signal</>
+                        }
+                      </div>
+                      <button onClick={closeFormCheck} className="p-1.5 text-white/40 hover:text-white transition-colors">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
+                    {/* Exercise name */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-1">Exercise</p>
+                      <p className="text-lg font-extrabold text-white leading-tight">{formCheckExercise}</p>
+                    </div>
+
+                    {/* Rep counter */}
+                    <div className="glass rounded-3xl p-6 text-center">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-3">Reps</p>
+                      <div className="relative inline-flex items-center justify-center">
+                        {/* Arc progress */}
+                        <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+                          <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+                          <circle
+                            cx="60" cy="60" r="52" fill="none"
+                            stroke={repCounter.phase === 'eccentric' ? '#a78bfa' : '#10b981'}
+                            strokeWidth="8"
+                            strokeLinecap="round"
+                            strokeDasharray={`${2 * Math.PI * 52}`}
+                            strokeDashoffset={`${2 * Math.PI * 52 * (1 - repCounter.progress)}`}
+                            className="transition-all duration-100"
+                          />
+                        </svg>
+                        <div className="absolute text-center">
+                          <p className="text-5xl font-black tabular-nums text-white leading-none">{repCounter.reps}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mt-1">
+                            {repCounter.phase === 'eccentric' ? 'squeeze' : repCounter.phase === 'concentric' ? 'lower' : 'ready'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setRepCounter(newRepCounter())}
+                        className="mt-4 flex items-center gap-1.5 mx-auto text-[11px] text-white/30 hover:text-white/60 transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Reset
+                      </button>
+                    </div>
+
+                    {/* Live angle readout */}
+                    {latestPose && (() => {
+                      const cfg = getRepConfig(formCheckExercise);
+                      const angle = cfg ? getPrimaryAngle(latestPose, cfg) : null;
+                      return angle !== null ? (
+                        <div className="glass rounded-2xl px-4 py-3 flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-widest text-white/30">Joint angle</span>
+                          <span className="text-2xl font-black tabular-nums text-white">{Math.round(angle)}°</span>
+                        </div>
+                      ) : null;
+                    })()}
+
+                    {/* Form cues */}
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Form feedback</p>
+                      {poseWsStatus !== 'connected' ? (
+                        <div className="glass rounded-2xl px-4 py-5 text-center space-y-2">
+                          <p className="text-[13px] font-semibold text-white/50">Waiting for iKeleton OSC</p>
+                          <p className="text-[11px] text-white/25 leading-snug">
+                            Open iKeleton on your iPhone, set the target IP to this device and port{' '}
+                            <span className="font-mono text-violet-400">8001</span>, then start tracking.
+                          </p>
+                        </div>
+                      ) : formCues.length === 0 ? (
+                        <div className="glass rounded-2xl px-4 py-4 text-center">
+                          <p className="text-[12px] text-white/40">Move into frame — analysing…</p>
+                        </div>
+                      ) : (
+                        formCues.map((cue, i) => (
+                          <div key={i} className={cn(
+                            "rounded-2xl px-4 py-3 flex items-start gap-3",
+                            cue.severity === 'ok' ? "bg-emerald-500/10 border border-emerald-500/20" :
+                            cue.severity === 'warn' ? "bg-amber-500/10 border border-amber-500/20" :
+                            "bg-red-500/10 border border-red-500/20"
+                          )}>
+                            <div className={cn(
+                              "w-2 h-2 rounded-full mt-1 shrink-0",
+                              cue.severity === 'ok' ? "bg-emerald-400" :
+                              cue.severity === 'warn' ? "bg-amber-400" : "bg-red-400"
+                            )} />
+                            <p className={cn(
+                              "text-[12px] font-semibold leading-snug",
+                              cue.severity === 'ok' ? "text-emerald-300" :
+                              cue.severity === 'warn' ? "text-amber-300" : "text-red-300"
+                            )}>{cue.message}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Setup instructions */}
+                    <details className="group">
+                      <summary className="text-[10px] font-bold uppercase tracking-widest text-white/20 cursor-pointer hover:text-white/40 transition-colors list-none flex items-center gap-1.5">
+                        <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" /> Setup
+                      </summary>
+                      <div className="mt-3 glass rounded-2xl px-4 py-4 space-y-2 text-[11px] text-white/40 leading-relaxed">
+                        <p>1. Install <span className="text-white/60 font-semibold">iKeleton OSC</span> from the App Store.</p>
+                        <p>2. Ensure iPhone and this device are on the <span className="text-white/60 font-semibold">same Wi-Fi</span>.</p>
+                        <p>3. In iKeleton → Settings, enter this device's <span className="text-white/60 font-semibold">IP address</span> and port <span className="font-mono text-violet-400">8001</span>.</p>
+                        <p>4. Prop your phone so it can see your full body during the set.</p>
+                        <p>5. Hit Start in iKeleton — reps and cues appear automatically.</p>
+                      </div>
+                    </details>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
 
@@ -1534,7 +1762,8 @@ function ExerciseCard({
   onAddSet,
   onAddDropSet,
   onStartRest,
-  onRpeChange
+  onRpeChange,
+  onFormCheck
 }: {
   idx: number;
   exercise: Exercise;
@@ -1550,6 +1779,7 @@ function ExerciseCard({
   onAddDropSet: () => void;
   onStartRest: (secs: number) => void;
   onRpeChange: (val: number) => void;
+  onFormCheck: () => void;
   [key: string]: unknown;
 }) {
   const [isOpen, setIsOpen] = useState(idx === 0);
@@ -1610,6 +1840,15 @@ function ExerciseCard({
             <div className="shrink-0 opacity-60">
               <Sparkline data={sparklineData} />
             </div>
+          )}
+          {exercise.type === 'weight' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onFormCheck(); }}
+              className="p-1.5 text-white/25 hover:text-violet-400 transition-colors"
+              title="Form Check"
+            >
+              <Activity className="w-4 h-4" />
+            </button>
           )}
           <button
             onClick={(e) => { e.stopPropagation(); onToggleSkip(); }}

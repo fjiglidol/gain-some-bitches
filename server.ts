@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+import { Server as OscServer } from 'node-osc';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,8 +132,47 @@ app.get('/api/health', (_req, res) => {
 });
 
 const PORT = 3001;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`LiftOff API running on http://localhost:${PORT}`);
-  console.log(`iCloud path: ${CSV_FILE}`);
-  console.log(`Local path:  ${LOCAL_CSV}`);
+const OSC_PORT = 8001; // iKeleton OSC sends to this port
+
+// ─── HTTP + WebSocket server ─────────────────────────────────────────────────
+const httpServer = createServer(app);
+
+const wss = new WebSocketServer({ server: httpServer, path: '/pose-ws' });
+
+const wsClients = new Set<WebSocket>();
+wss.on('connection', (ws) => {
+  wsClients.add(ws);
+  ws.on('close', () => wsClients.delete(ws));
+  ws.on('error', () => wsClients.delete(ws));
+  console.log(`[WS] Client connected (${wsClients.size} total)`);
+});
+
+function broadcast(msg: string) {
+  for (const client of wsClients) {
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
+  }
+}
+
+// ─── OSC receiver (iKeleton → server → WebSocket → browser) ─────────────────
+const oscServer = new OscServer(OSC_PORT, '0.0.0.0', () => {
+  console.log(`[OSC] Listening for iKeleton on UDP port ${OSC_PORT}`);
+});
+
+oscServer.on('message', (msg) => {
+  // msg is [address, ...args]
+  // iKeleton sends e.g. ['/pose', count, x0,y0,z0,v0, x1,y1,z1,v1, ...]
+  const [address, ...args] = msg;
+  broadcast(JSON.stringify({ address, args }));
+});
+
+oscServer.on('error', (err: Error) => {
+  console.error('[OSC] Error:', err.message);
+});
+
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`LiftOff API  → http://localhost:${PORT}`);
+  console.log(`Pose WS      → ws://localhost:${PORT}/pose-ws`);
+  console.log(`iKeleton OSC → UDP port ${OSC_PORT}  (set this in the iOS app)`);
+  console.log(`iCloud path  → ${CSV_FILE}`);
+  console.log(`Local path   → ${LOCAL_CSV}`);
 });
