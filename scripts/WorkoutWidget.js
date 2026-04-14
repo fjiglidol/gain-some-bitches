@@ -3,7 +3,7 @@
 // Setup: Copy to iCloud Drive/Scriptable/, add as Scriptable widget on home screen.
 // Also copy programme.json to iCloud Drive/Scriptable/ for exercise data.
 
-const APP_URL = "https://fjiglidol.github.io/gain-some-bitches/";
+const APP_URL = "https://fjiglidol.github.io/lifting-tracker/";
 
 // ── Schedule (matches the app) ──
 const DAY_TO_SESSION = {

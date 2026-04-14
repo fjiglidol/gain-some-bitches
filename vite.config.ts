@@ -6,7 +6,7 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   const isGHPages = process.env.GITHUB_ACTIONS === 'true';
   return {
-    base: isGHPages ? '/gain-some-bitches/' : '/',
+    base: isGHPages ? '/lifting-tracker/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
