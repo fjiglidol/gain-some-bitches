@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import DesktopApp from './desktop/DesktopApp';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus,
@@ -730,6 +731,38 @@ export default function App() {
     setHistoryOpen(true);
     if ('vibrate' in navigator) navigator.vibrate(50);
   };
+
+  // ─── Desktop breakpoint + force-mobile ────────────────────────────────────
+  const [forceMobile, setForceMobile] = useState<boolean>(() => {
+    try { return localStorage.getItem('gsb_force_mobile') === 'true'; } catch { return false; }
+  });
+  const [isDesktopWidth, setIsDesktopWidth] = useState<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : false
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => setIsDesktopWidth(e.matches);
+    setIsDesktopWidth(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  const handleToggleForceMobile = () => {
+    const next = !forceMobile;
+    setForceMobile(next);
+    try { localStorage.setItem('gsb_force_mobile', String(next)); } catch {}
+  };
+
+  // Render desktop shell when width >= 768px AND force-mobile is off
+  if (isDesktopWidth && !forceMobile) {
+    return (
+      <DesktopApp
+        forceMobile={forceMobile}
+        onToggleForceMobile={handleToggleForceMobile}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen font-sans selection:bg-violet-500/30 selection:text-white relative">

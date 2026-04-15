@@ -107,3 +107,71 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ─── Desktop shell ─────────────────────────────────────────────────────────── */
+
+/*
+ * Palette (pulled from Nordic hero — bone-white + water-blue + warm wood):
+ *   Accent (water-blue): #7BAFC4
+ *   Warm accent:         #C4A882
+ *   Glass bg:            rgba(255,255,255,0.07)
+ *   Icon bg:             rgba(123,175,196,0.12)
+ *   Topbar:              rgba(10,10,10,0.55) blur
+ */
+
+.dt-root {
+  /* Ensure selection colour is consistent */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hero background for desktop — Nordic architectural image */
+.dt-hero-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: url('/bg/hero.jpg') center/cover no-repeat;
+}
+
+/* Dark veil over hero so glass cards and text are legible */
+.dt-hero-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: rgba(6, 10, 14, 0.60);
+}
+
+/* Top navigation bar */
+.dt-topbar {
+  background: rgba(6, 10, 14, 0.52);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Glass content card */
+.dt-glass-card {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+/* Icon container background */
+.dt-icon-bg {
+  background: rgba(123, 175, 196, 0.12);
+}
+
+/* Water-blue accent backgrounds/borders */
+.dt-accent-bg {
+  background: #7BAFC4;
+}
+
+/* Water-blue text accent */
+.dt-accent-text {
+  color: #7BAFC4;
+}
+
+/* Nav active link has no background — only the sliding underline indicator */
+.dt-nav-active {
+  color: rgba(255, 255, 255, 0.92);
+}
