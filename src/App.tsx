@@ -193,6 +193,31 @@ export default function App() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const restTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Keep a ref of latest session state so background-save handlers avoid stale closures
+  const progressRef = useRef({ currentSessionKey, setData, skipped, elapsed });
+  useEffect(() => {
+    progressRef.current = { currentSessionKey, setData, skipped, elapsed };
+  }, [currentSessionKey, setData, skipped, elapsed]);
+
+  // Save session on background/close — prevents iOS kill data loss
+  useEffect(() => {
+    const emergencySave = () => {
+      const { currentSessionKey: key, setData: data, skipped: skip, elapsed: time } = progressRef.current;
+      if (!key) return;
+      const progress = { sessionKey: key, setData: data, skipped: skip, elapsed: time, savedAt: Date.now() };
+      localStorage.setItem('liftoff_session', JSON.stringify(progress));
+    };
+    const onVisChange = () => { if (document.visibilityState === 'hidden') emergencySave(); };
+    document.addEventListener('visibilitychange', onVisChange);
+    window.addEventListener('pagehide', emergencySave);
+    window.addEventListener('beforeunload', emergencySave);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisChange);
+      window.removeEventListener('pagehide', emergencySave);
+      window.removeEventListener('beforeunload', emergencySave);
+    };
+  }, []);
+
   // Manual log form state
   const [logFormOpen, setLogFormOpen] = useState(false);
   const [logFormDate, setLogFormDate] = useState('');
