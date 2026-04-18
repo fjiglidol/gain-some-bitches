@@ -16,6 +16,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Dumbbell, BarChart2, Clock, Settings, ChevronRight, Activity } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns';
 import { mergeHistory, type HistorySession } from '../data/seedHistory';
+import { HistoryPage } from './HistoryPage';
+import { AnalyticsPage } from './AnalyticsPage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type DesktopPage = 'home' | 'history' | 'analytics' | 'settings';
@@ -417,10 +419,10 @@ export default function DesktopApp({
         <AnimatePresence mode="wait">
           {page === 'home' && <HomePage key="home" historyData={historyData} />}
           {page === 'history' && (
-            <StubPage key="history" label="History" icon={<Clock className="w-6 h-6 dt-accent-text opacity-70" />} />
+            <HistoryPage key="history" historyData={historyData} />
           )}
           {page === 'analytics' && (
-            <StubPage key="analytics" label="Analytics" icon={<BarChart2 className="w-6 h-6 dt-accent-text opacity-70" />} />
+            <AnalyticsPage key="analytics" historyData={historyData} />
           )}
           {page === 'settings' && (
             <SettingsPage
